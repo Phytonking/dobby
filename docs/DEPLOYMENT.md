@@ -177,7 +177,7 @@ The old diagnostic's explicit `response_schema=Plan` negative test will still fa
 with HTTP 400; it is not the production path. A 503 from the JSON Schema path is
 Gemini overload, not schema rejection. Planning now makes up to three attempts
 with exponential backoff and jitter for transient failures, then returns an
-actionable private error. Persistent overload can still prevent scheduling.
+actionable error in the requesting channel. Persistent overload can still prevent scheduling.
 Calendar writes are not retried by this policy. Discord voice-library warnings
 are unrelated to this text-only bot.
 
@@ -188,7 +188,7 @@ are unrelated to this text-only bot.
 3. Create and confirm; check `/events` and Google Calendar for one event.
 4. Test a 30-minute override and recent-message context.
 5. Rename/reschedule by ID. Prepare an edit, change the event directly in Google Calendar, then confirm the old preview; it should fail as stale.
-6. Remove the scheduler role before confirming a DM preview; access should be denied.
+6. Remove the scheduler role before confirming a channel preview; access should be denied.
 7. Restart Docker Dobby; verify `bot_ready` and that old previews cannot write.
 8. If updates are enabled, push a harmless documentation change and verify publication plus the Pi update.
 

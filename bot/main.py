@@ -136,7 +136,6 @@ class Bot(discord.Client):
         # Mentions work in every visible channel unless MENTION_CHANNEL_IDS narrows them,
         # so message content is always required. Enable the intent in the developer portal.
         intents.guild_messages = True
-        intents.dm_messages = True
         intents.message_content = True
         super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none(), max_messages=None)
         self.config = config
@@ -169,7 +168,7 @@ class Bot(discord.Client):
                 "One moment, if you please! Dobby needs 10 seconds between commands.", ephemeral=True
             )
             return False
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(thinking=True)
         return True
 
     def take_cooldown(self, user_id):
@@ -181,22 +180,41 @@ class Bot(discord.Client):
         return True
 
     async def member_allowed(self, user_id, channel_id):
-        # A DM button has no guild member payload: fetch current roles before any write.
-        if not self.config.mentionable(channel_id):
+        # Fetch current roles before returning a preview or accepting a confirmation.
+        def denied(reason, status=None):
+            log.warning(
+                "mention_access_denied reason=%s user=%s channel=%s http_status=%s",
+                reason,
+                user_id,
+                channel_id,
+                status,
+            )
             return False
+
+        if not self.config.mentionable(channel_id):
+            return denied("mention_channel_not_allowed")
         guild = self.get_guild(self.config.guild)
         if guild is None:
-            return False
+            return denied("guild_not_cached")
         try:
             member = await guild.fetch_member(user_id)
-            channel = guild.get_channel(channel_id)
-            return (
-                channel is not None
-                and channel.permissions_for(member).view_channel
-                and self.config.allows(guild.id, member.id, [r.id for r in member.roles], channel_id)
-            )
-        except discord.HTTPException:
-            return False
+            channel = guild.get_channel_or_thread(channel_id)
+            if channel is None:
+                channel = await guild.fetch_channel(channel_id)
+            if not channel.permissions_for(member).view_channel:
+                return denied("requester_cannot_view_channel")
+            # Private threads inherit parent permissions, so visibility alone is
+            # insufficient when reauthorizing a thread confirmation.
+            if isinstance(channel, discord.Thread) and channel.is_private():
+                if not channel.permissions_for(member).manage_threads:
+                    await channel.fetch_member(user_id)
+            if self.config.channels and channel_id not in self.config.channels:
+                return denied("channel_not_in_ALLOWED_CHANNEL_IDS")
+            if not self.config.allows(guild.id, member.id, [r.id for r in member.roles], channel_id):
+                return denied("user_or_roles_not_in_allowlist")
+            return True
+        except discord.HTTPException as exc:
+            return denied("discord_lookup_failed", exc.status)
 
     async def on_message(self, message):
         if (
@@ -218,10 +236,11 @@ class Bot(discord.Client):
                 message, "One moment, if you please! Dobby needs 10 seconds between requests."
             )
             return
-        dm = None
+        reply = None
         try:
-            dm = await message.author.send("Dobby is on it! Dobby will prepare a meeting preview for you…")
-            await self.mention_reply(message, "Dobby sent you a DM! Please check there for your reply.")
+            reply = await message.reply(
+                "Dobby is on it! Dobby will prepare a meeting preview here…", mention_author=False
+            )
             request = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
             if not request or len(request) > 2000:
                 raise UserError("Mention me with a meeting request under 2,000 characters.")
@@ -240,13 +259,13 @@ class Bot(discord.Client):
             selected = re.search(r"\bevent_id:([a-zA-Z0-9_-]+)", request)
             event_id = selected.group(1) if selected else None
             proposal = await self.work(self.scheduler.prepare, request, event_id, message.id, history)
-            # Recheck before returning private details if membership changed during planning.
+            # Recheck access if membership changed during planning.
             if not await self.member_allowed(message.author.id, message.channel.id):
                 raise UserError("Your calendar access is no longer authorized.")
             content = preview(proposal)
             if use_context:
                 content += f"\nUsed {len(history)} recent text messages from the requesting channel."
-            await dm.edit(
+            await reply.edit(
                 content=content
                 if len(content) <= 1900
                 else "Dobby has attached the preview. Please check it before confirming!",
@@ -254,28 +273,30 @@ class Bot(discord.Client):
                 view=Confirmation(self, message.author.id, proposal, message.channel.id),
             )
         except discord.Forbidden:
-            # No calendar details or exception text may be posted in the shared channel.
-            try:
-                await message.reply(
-                    "Dobby needs a private place to reply! Enable DMs from this server, or use /schedule for a private reply.",
-                    mention_author=False,
-                )
-            except discord.HTTPException:
-                pass
+            log.warning("mention_reply_forbidden channel=%s", message.channel.id)
+            text = (
+                "Dobby needs permission to send messages, send messages in threads, attach files, "
+                "and read history when using context in this channel."
+            )
+            if reply:
+                try:
+                    await reply.edit(content=text, attachments=[], view=None)
+                except discord.HTTPException:
+                    await self.mention_reply(message, text)
+            else:
+                await self.mention_reply(message, text)
         except Exception as exc:
             text = self.error(exc)
-            if dm:
+            if reply:
                 try:
-                    await dm.edit(content=text, view=None)
+                    await reply.edit(content=text, attachments=[], view=None)
                 except discord.HTTPException:
-                    pass
+                    await self.mention_reply(message, text)
             else:
-                await self.mention_reply(
-                    message, "Dobby could not send you a DM. Please use /schedule for a private reply."
-                )
+                await self.mention_reply(message, text)
 
     async def mention_reply(self, message, text):
-        # Shared-channel feedback must never contain calendar details or request text.
+        # Reply in the originating channel or thread without pinging the requester.
         try:
             await message.reply(text, mention_author=False)
         except discord.HTTPException:
@@ -340,7 +361,9 @@ class Bot(discord.Client):
             except Exception as exc:
                 await interaction.edit_original_response(content=self.error(exc))
 
-        @self.tree.command(name="events", description="Privately list upcoming events and their exact IDs")
+        @self.tree.command(
+            name="events", description="List upcoming events and their exact IDs in this channel"
+        )
         @app_commands.guild_only()
         async def events(interaction: discord.Interaction, days: app_commands.Range[int, 1, 90] = 14):
             if not await self.gate(interaction):
@@ -391,11 +414,12 @@ class Bot(discord.Client):
                     "`/schedule request:Move this meeting to October 13 at 2pm event_id:…`\n"
                     "`/schedule request:Delete this meeting event_id:…`\n"
                     "Default duration: 1 hour. Mention Dobby in an enabled channel to schedule; "
-                    "say “make this a meeting” to use the last 6 messages. Preview arrives in your DMs. "
+                    "say “make this a meeting” to use the last 6 messages. Preview appears in this channel or thread. "
                     "Changes require your confirmation. Existing guests receive Google notifications. "
                     "Only single timed meetings are supported. Conflicts check the linked calendar only. "
                     "Your request and selected event details go to Gemini; free-tier data may improve Google products. "
-                    "Replies are private to you."
+                    "Calendar replies are visible to everyone who can see this channel or thread. "
+                    "Only the requester can confirm or cancel their proposal."
                 )
             )
 

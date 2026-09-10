@@ -1,6 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call
+import discord
+import pytest
 from bot.config import Config
 from bot.main import Bot
 from bot.service import Proposal
@@ -10,6 +12,7 @@ def setup(mention_channels=frozenset({40})):
     bot = Mock()
     bot.config.guild = 10
     bot.config.mention_channels = mention_channels
+    bot.config.channels = frozenset()
     # Bind the real predicate so the tests exercise the shipped gating rule.
     bot.config.mentionable = Config.mentionable.__get__(bot.config)
     bot.config.context_limit = 6
@@ -35,13 +38,14 @@ def setup(mention_channels=frozenset({40})):
     message.author.bot = False
     message.author.id = 1
     message.author.send = AsyncMock()
-    message.author.send.return_value.edit = AsyncMock()
+    message.reply.return_value.edit = AsyncMock()
     message.guild.id = 10
     message.channel.id = 40
     message.id = 100
     message.mentions = [bot.user]
     message.content = "<@5> make this a meeting"
     message.reply = AsyncMock()
+    message.reply.return_value.edit = AsyncMock()
     return bot, message
 
 
@@ -74,7 +78,7 @@ def test_context_is_bounded_same_channel_and_excludes_bots():
         message.channel.history.assert_called_once_with(limit=6, before=message)
         args = bot.work.call_args.args
         assert [row["text"] for row in args[-1]] == ["earlier", "latest"]
-        message.author.send.return_value.edit.assert_awaited_once()
+        message.reply.return_value.edit.assert_awaited_once()
         message.reply.assert_awaited_once()
 
     asyncio.run(run())
@@ -87,6 +91,40 @@ def test_complete_mention_does_not_fetch_history():
         await Bot.on_message(bot, message)
         message.channel.history.assert_not_called()
         assert bot.work.call_args.args[-1] == []
+        message.author.send.assert_not_awaited()
+        message.reply.assert_awaited_once()
+        assert message.reply.call_args.kwargs["mention_author"] is False
+        result = message.reply.return_value.edit.call_args.kwargs
+        assert "Sync" in result["content"]
+        assert result["attachments"][0].filename == "calendar-preview.txt"
+        assert result["view"].owner == message.author.id
+        assert result["view"].origin_channel == message.channel.id
+
+    asyncio.run(run())
+
+
+def test_no_dm_fallback_when_thread_send_is_forbidden():
+    async def run():
+        bot, message = setup()
+        message.reply.side_effect = discord.Forbidden(Mock(status=403, reason="Forbidden"), "no access")
+        await Bot.on_message(bot, message)
+        message.author.send.assert_not_awaited()
+        bot.work.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_planning_error_updates_channel_reply():
+    async def run():
+        bot, message = setup()
+        bot.error = Bot.error
+        message.content = "<@5> schedule Sync tomorrow at 10am"
+        bot.work.side_effect = RuntimeError("provider private data")
+        await Bot.on_message(bot, message)
+        content = message.reply.return_value.edit.call_args.kwargs["content"]
+        assert "could not complete" in content
+        assert "provider private data" not in content
+        message.author.send.assert_not_awaited()
 
     asyncio.run(run())
 
@@ -98,7 +136,7 @@ def test_bare_mention_replies_without_calling_ai():
         bot.error = Bot.error
         await Bot.on_message(bot, message)
         bot.work.assert_not_awaited()
-        assert "meeting request" in message.author.send.return_value.edit.call_args.kwargs["content"]
+        assert "meeting request" in message.reply.return_value.edit.call_args.kwargs["content"]
         message.reply.assert_awaited_once()
 
     asyncio.run(run())
@@ -123,7 +161,7 @@ def test_context_requires_requester_history_permission():
         await Bot.on_message(bot, message)
         message.channel.history.assert_not_called()
         bot.work.assert_not_awaited()
-        assert "Read Message History" in message.author.send.return_value.edit.call_args.kwargs["content"]
+        assert "Read Message History" in message.reply.return_value.edit.call_args.kwargs["content"]
 
     asyncio.run(run())
 
@@ -135,11 +173,103 @@ def test_member_without_history_permission_can_schedule():
         guild.id = 10
         member = Mock(id=1, roles=[])
         guild.fetch_member = AsyncMock(return_value=member)
-        permissions = guild.get_channel.return_value.permissions_for.return_value
+        permissions = guild.get_channel_or_thread.return_value.permissions_for.return_value
         permissions.view_channel = True
         permissions.read_message_history = False
         bot.config.allows.return_value = True
         assert await Bot.member_allowed(bot, 1, 40)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("cached", [True, False])
+def test_thread_or_uncached_channel_authorizes_like_slash_command(cached):
+    async def run():
+        bot, _ = setup()
+        bot.config = Config(
+            "fake",
+            10,
+            frozenset(),
+            frozenset({7}),
+            frozenset({40}),
+            "fake",
+            "test",
+            "unused",
+            "primary",
+            "UTC",
+        )
+        guild = bot.get_guild.return_value
+        guild.id = 10
+        member = Mock(id=1, roles=[Mock(id=7)])
+        guild.fetch_member = AsyncMock(return_value=member)
+        channel = Mock(spec=discord.Thread)
+        channel.is_private.return_value = False
+        channel.permissions_for.return_value.view_channel = True
+        guild.get_channel.return_value = None
+        guild.get_channel_or_thread.return_value = channel if cached else None
+        guild.fetch_channel = AsyncMock(return_value=channel)
+        interaction = Mock(guild_id=10, user=member, channel_id=40)
+        assert Bot.allowed(bot, interaction)
+        assert await Bot.member_allowed(bot, 1, 40)
+        assert guild.fetch_channel.await_count == (0 if cached else 1)
+        guild.get_channel.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_private_thread_membership_is_rechecked_before_authorizing(caplog):
+    async def run():
+        bot, _ = setup()
+        guild = bot.get_guild.return_value
+        guild.id = 10
+        guild.fetch_member = AsyncMock(return_value=Mock(id=1, roles=[]))
+        channel = Mock(spec=discord.Thread)
+        channel.is_private.return_value = True
+        channel.permissions_for.return_value.view_channel = True
+        channel.permissions_for.return_value.manage_threads = False
+        channel.fetch_member = AsyncMock(
+            side_effect=discord.NotFound(Mock(status=404, reason="Not Found"), "private data")
+        )
+        guild.get_channel_or_thread.return_value = channel
+        assert not await Bot.member_allowed(bot, 1, 40)
+        channel.fetch_member.assert_awaited_once_with(1)
+        assert "discord_lookup_failed" in caplog.text
+        assert "private data" not in caplog.text
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("denial", ["channel", "role", "visibility"])
+def test_member_lookup_preserves_restrictions_and_logs_reason(denial, caplog):
+    async def run():
+        bot, _ = setup()
+        bot.config = Config(
+            "fake",
+            10,
+            frozenset(),
+            frozenset({7}),
+            frozenset({99 if denial == "channel" else 40}),
+            "fake",
+            "test",
+            "unused",
+            "primary",
+            "UTC",
+        )
+        guild = bot.get_guild.return_value
+        guild.id = 10
+        guild.fetch_member = AsyncMock(
+            return_value=Mock(id=1, roles=[] if denial == "role" else [Mock(id=7)])
+        )
+        guild.get_channel_or_thread.return_value.permissions_for.return_value.view_channel = (
+            denial != "visibility"
+        )
+        assert not await Bot.member_allowed(bot, 1, 40)
+        expected = {
+            "channel": "channel_not_in_ALLOWED_CHANNEL_IDS",
+            "role": "user_or_roles_not_in_allowlist",
+            "visibility": "requester_cannot_view_channel",
+        }
+        assert expected[denial] in caplog.text
 
     asyncio.run(run())
 
@@ -167,10 +297,11 @@ def test_empty_mention_channels_allows_every_channel():
             message.channel.id = channel_id
             message.content = "<@5> schedule Planning tomorrow at 10am"
             await Bot.on_message(bot, message)
-            # Checked once to admit the mention, once again before the private reply.
+            # Checked once to admit the mention, once again before the channel preview.
             assert bot.member_allowed.await_args_list == [call(1, channel_id)] * 2
             bot.work.assert_awaited_once()
-            message.author.send.assert_awaited_once()
+            message.author.send.assert_not_awaited()
+            message.reply.assert_awaited_once()
 
     asyncio.run(run())
 

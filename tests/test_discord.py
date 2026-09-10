@@ -34,7 +34,7 @@ def test_confirmation_owner_expiry_and_reauthorization():
     asyncio.run(run())
 
 
-def test_dm_confirmation_checks_current_roles_in_origin_channel():
+def test_channel_confirmation_checks_current_roles_in_origin_channel():
     async def run():
         bot = Mock()
         bot.member_allowed = AsyncMock(return_value=False)
@@ -67,6 +67,39 @@ def test_unauthorized_command_never_defers_or_calls_service():
         assert not await Bot.gate(bot, item)
         item.response.defer.assert_not_awaited()
         bot.work.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_authorized_slash_reply_is_public():
+    async def run():
+        bot = Mock()
+        bot.allowed.return_value = True
+        bot.take_cooldown.return_value = True
+        item = interaction()
+        assert await Bot.gate(bot, item)
+        item.response.defer.assert_awaited_once_with(thinking=True)
+
+    asyncio.run(run())
+
+
+def test_public_confirmation_only_owner_can_act_and_result_edits_channel_message():
+    async def run():
+        bot = Mock()
+        bot.member_allowed = AsyncMock(return_value=True)
+        bot.work = AsyncMock(return_value={"id": "abc"})
+        view = Confirmation(bot, 1, Proposal("create", {}, None, None, "123", None), origin_channel=40)
+        assert not await view.interaction_check(interaction(2))
+        bot.member_allowed.assert_not_awaited()
+        bot.work.assert_not_awaited()
+        item = interaction(1)
+        assert await view.interaction_check(item)
+        item.response.is_done.return_value = True
+        await view.confirm.callback(item)
+        item.response.defer.assert_awaited_once_with()
+        assert "created the meeting" in item.edit_original_response.call_args.kwargs["content"]
+        assert item.edit_original_response.call_args.kwargs["view"] is None
+        bot.work.assert_awaited_once()
 
     asyncio.run(run())
 

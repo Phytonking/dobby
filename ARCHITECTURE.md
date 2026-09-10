@@ -12,10 +12,10 @@ flowchart TD
     A --> P[Gemini structured planning]
     H[Optional six recent messages] --> P
     P --> V[Validation and conflict check]
-    V --> C[Private preview and confirmation]
+    V --> C[Channel preview and confirmation]
     C --> R[Authorization, expiry and ETag checks]
     R --> G[Google Calendar write]
-    G --> O[Private result]
+    G --> O[Channel result]
     S[Local credential files] --> M[Read-only Compose mounts]
     M --> B[Dobby container on Pi or Windows]
     B --> A
@@ -30,7 +30,7 @@ flowchart TD
 | Path | Responsibility |
 | --- | --- |
 | `bot/config.py` | Load local/mounted dotenv; validate settings and allowlists |
-| `bot/main.py` | Discord lifecycle, mentions/context, commands, Dobby voice, private confirmations |
+| `bot/main.py` | Discord lifecycle, mentions/context, commands, Dobby voice, channel confirmations |
 | `bot/planner.py` | Gemini structured output with context treated as untrusted data |
 | `bot/models.py` | Writable field schema, time validation, duration/default/timezone rules |
 | `bot/service.py` | Prepare without writing; exact event selection and ETags |
@@ -49,15 +49,15 @@ flowchart TD
 
 ## Request lifecycle
 
-1. Reject other servers, unauthorized users/roles and channels before calling Google/Gemini. No administrator bypass. Mention context also requires current membership and View Channel/Read Message History in an ordinary text channel. `MENTION_CHANNEL_IDS` narrows mentions to named channels; empty permits any visible channel, mirroring `ALLOWED_CHANNEL_IDS`, so the message content intent is always requested and the user/role allowlist remains the access boundary.
-2. Defer slash responses privately. For mentions, open a DM before fetching context. Blocked DMs never cause a public calendar preview.
+1. Reject other servers, unauthorized users/roles and channels before calling Google/Gemini. No administrator bypass. Mention context also requires current membership and View Channel/Read Message History in the requesting channel or thread. `MENTION_CHANNEL_IDS` narrows mentions to named channels; empty permits any visible channel, mirroring `ALLOWED_CHANNEL_IDS`, so the message content intent is always requested and the user/role allowlist remains the access boundary.
+2. Defer slash responses publicly. For mentions, reply in the originating channel or thread before fetching context. No DMs are sent; previews, attachments, and results are visible to everyone with access there.
 3. Context language triggers at most six preceding same-channel messages, excluding bots and limiting each text to 1,500 characters. No attachments, linked pages, other channels or archives. Discord's message cache is disabled.
 4. Updates/deletes fetch the user-supplied exact event ID from the fixed calendar. Gemini cannot choose another calendar or arbitrary event ID.
 5. Gemini sees current team-local time, the request, optional context and selected event fields. Typed validation only permits title, start/end, description and location operations.
 6. Validate future aware timestamps, positive duration up to 24 hours and supported event types. New meetings default to one hour; moved meetings preserve duration. Clarify missing/ambiguous details. No write occurs during planning.
-7. Show a two-minute single-use private confirmation. DM buttons fetch current guild roles; slash buttons check the fresh interaction membership. Dobby's voice is fixed presentation text: no extra AI call, no rewriting Calendar fields.
+7. Show a two-minute single-use channel confirmation restricted to its requester. Mention buttons fetch current guild roles and recheck private thread membership; slash buttons check the fresh interaction membership. Dobby's voice is fixed presentation text: no extra AI call, no rewriting Calendar fields.
 8. Serialize API work through one bounded executor. Recheck conflicts before writes. PATCH/DELETE carry `If-Match` with the preview ETag; stale events fail. Creates use a deterministic SHA-256 ID based on the Discord request.
-9. Consume the view before awaiting a write, preventing double-click duplication. Report results privately. After uncertain network failures users must inspect `/events` before issuing another request.
+9. Consume the view before awaiting a write, preventing double-click duplication. Report results in the originating channel or thread. After uncertain network failures users must inspect `/events` before issuing another request.
 
 ## Secrets and access boundaries
 

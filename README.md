@@ -1,6 +1,6 @@
 ﻿# Dobby — Discord Meeting Scheduler
 
-Run Dobby on a **Raspberry Pi or Windows computer using Docker**. Dobby turns Discord requests into Google Calendar meetings using Gemini, speaks in an eager house-elf voice, and asks you to confirm a private preview before changing the calendar.
+Run Dobby on a **Raspberry Pi or Windows computer using Docker**. Dobby turns Discord requests into Google Calendar meetings using Gemini, speaks in an eager house-elf voice, and asks you to confirm a preview in the requesting channel or thread before changing the calendar.
 
 Everything runs on your own machine, so there is nothing to pay for hosting. That machine must stay powered on and connected to the internet. Gemini runs remotely; the Pi does not run an AI model locally.
 
@@ -22,7 +22,7 @@ Everything runs on your own machine, so there is nothing to pay for hosting. Tha
 - Mention `@Dobby` to create, rename, reschedule, change descriptions/locations, or delete meetings.
 - Say `@Dobby make this a meeting` to use up to six recent channel messages as context.
 - New meetings default to **one hour** unless you specify otherwise.
-- Private DM previews for mentions; private ephemeral replies for slash commands.
+- Shared previews and results in the requesting channel or thread for mentions and slash commands. Only the requester can confirm or cancel.
 - Server, role/user, and channel restrictions, checked again at confirmation.
 - Conflict detection, exact event selection, and protection against overwriting newer edits.
 - Local read-only credential mounts; no secrets in images or your public repository.
@@ -89,7 +89,7 @@ On Pi/Linux, edit `.env` and set `DOBBY_UID` and `DOBBY_GID` to the two IDs that
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application named **Dobby**. Set the bot username or server nickname to **Dobby**.
 2. Obtain its bot token and put it in local `.env` as `DISCORD_TOKEN`.
 3. Enable **Message Content Intent** — it is required for mention and context requests. No Presence or Server Members privileged intent is needed. Leave Interactions Endpoint URL empty.
-4. Invite with `bot` and `applications.commands` OAuth scopes. Grant **View Channels**, **Send Messages**, **Read Message History**, and **Attach Files** in scheduling channels. Do not grant Administrator or Manage Roles.
+4. Invite with `bot` and `applications.commands` OAuth scopes. Grant **View Channels**, **Send Messages**, **Send Messages in Threads**, **Read Message History**, and **Attach Files** in scheduling channels. Do not grant Administrator or Manage Roles.
 5. Enable Discord Developer Mode and copy the server, scheduler role, and scheduling text channel IDs into `.env`:
 
 ```dotenv
@@ -103,7 +103,7 @@ TEAM_TIMEZONE=America/Denver
 
 Replace placeholders with numeric IDs. Lists accept comma-separated IDs. `ALLOWED_USER_IDS` optionally grants access to specific users instead of requiring a role. At least one user or role must be allowed; there is no administrator bypass.
 
-Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Use ordinary text channels; thread context is not supported. Tell members that context requests send recent text to Gemini.
+Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Threads and forum posts use their own IDs in these allowlists, not the parent channel ID. Private thread access is rechecked before confirmation. Tell members that context requests send recent text to Gemini.
 
 ### Step 3: Get a Gemini API key
 
@@ -182,7 +182,7 @@ Run **one instance per Discord token**. Stop Windows Dobby with `docker compose 
 
 ### Before your first request
 
-Ask for the scheduler role, use a channel Dobby is allowed in, and allow DMs from that server. Type `@Dobby` and **select the bot from Discord's mention suggestions**. Plain text resembling a mention will not trigger it.
+Ask for the scheduler role and use a channel or thread Dobby is allowed in. Type `@Dobby` and **select the bot from Discord's mention suggestions**. Plain text resembling a mention will not trigger it.
 
 ### Create a meeting
 
@@ -191,7 +191,7 @@ Ask for the scheduler role, use a channel Dobby is allowed in, and allow DMs fro
 @Dobby schedule a Planning meeting tomorrow at 10am for 45 minutes
 ```
 
-The first request defaults to one hour. Times use the team timezone unless you specify another. Review the DM preview, then click **Confirm calendar change** to save it, or **Cancel** to discard it. No write occurs before confirmation. If details are missing, send a new complete request in the channel; Dobby does not keep an ongoing DM conversation.
+The first request defaults to one hour. Times use the team timezone unless you specify another. Review the preview in the channel or thread, then click **Confirm calendar change** to save it, or **Cancel** to discard it. No write occurs before confirmation. If details are missing, send a new complete request in the channel; Dobby does not keep an ongoing conversation or send DMs.
 
 ### Turn a discussion into a meeting
 
@@ -205,7 +205,7 @@ Requests referring to `this`, `that`, `above`, `discussion`, `context`, or `conv
 
 ### Find, modify, or delete a meeting
 
-1. Run `/events days:30` for a private list and event IDs.
+1. Run `/events days:30` for a shared list and event IDs in the current channel.
 2. Copy the exact event ID.
 3. Use it in a slash command's `event_id` option, or a mention:
 
@@ -222,13 +222,13 @@ Replace `PASTE_EVENT_ID`, review, then confirm. Moving an event preserves its du
 | Command | Purpose |
 | --- | --- |
 | `/schedule request:Create Planning tomorrow at 10am` | Preview a new meeting |
-| `/events days:30` | Private upcoming events and IDs |
+| `/events days:30` | Upcoming events and IDs visible in the channel |
 | `/schedule request:Move this meeting to tomorrow at 3pm event_id:ID` | Reschedule |
 | `/schedule request:Rename this meeting to Review event_id:ID` | Rename |
 | `/schedule request:Delete this meeting event_id:ID` | Preview deletion |
 | `/calendar_help` | Examples and privacy information |
 
-Slash replies are private inside Discord; mention requests are visible in the channel, while previews arrive by DM. Confirmations expire after two minutes. Restarts/updates invalidate pending previews. After an uncertain network failure, check `/events` before retrying because the write may already have completed.
+Mention and slash-command previews, event lists, and results are visible to everyone with access to the requesting channel or thread. Dobby does not send DMs. Only the requester can confirm or cancel a proposal. Confirmations expire after two minutes. Restarts/updates invalidate pending previews. After an uncertain network failure, check `/events` before retrying because the write may already have completed.
 
 ## Everyday Docker commands
 
@@ -305,7 +305,7 @@ The optional Pi timer checks every five minutes and recreates the container when
 | Bot starts but commands missing | Confirm `DISCORD_GUILD_ID`; commands sync to that one server on `bot_ready` |
 | Gateway 4014 | Enable Message Content Intent in the developer portal; it is always required |
 | Mention ignored | Actual mention, allowed role, correct text channel/server, ten-second cooldown |
-| DM preview unavailable | Enable DMs or use `/schedule` |
+| Channel preview unavailable | Grant Send Messages, Send Messages in Threads, and Attach Files in the requesting channel |
 | Context inaccessible | Bot and requester need View Channel and Read Message History |
 | Google auth expires | Relink Testing-mode OAuth and recreate container |
 | Gemini fails | Check key, model and quota; there is no paid fallback |
