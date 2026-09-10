@@ -1,0 +1,5 @@
+# Optional: pull a CI-tested multi-architecture image instead of building locally.
+services:
+  dobby:
+    image: "${DOBBY_IMAGE:?Set DOBBY_IMAGE in .env to ghcr.io/owner/repository:main}"
+    pull_policy: always

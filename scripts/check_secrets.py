@@ -19,12 +19,18 @@ PATTERNS = [
 
 
 def main():
-    result = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True)
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        capture_output=True,
+        check=True,
+    )
     failures = []
     for name in result.stdout.decode().split("\0"):
         if not name:
             continue
         path = Path(name)
+        if not path.is_file():
+            continue  # A tracked file can be deleted in the working tree before committing.
         lower = name.lower()
         forbidden = (
             lower.startswith("secrets/")
@@ -37,9 +43,9 @@ def main():
         ):
             failures.append(name)
     if failures:
-        print("Possible secrets in tracked files (contents withheld):\n" + "\n".join(failures))
+        print("Possible secrets in repository files (contents withheld):\n" + "\n".join(failures))
         sys.exit(1)
-    print("Tracked-file secret guard passed.")
+    print("Repository-file secret guard passed.")
 
 
 if __name__ == "__main__":

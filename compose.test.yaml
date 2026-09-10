@@ -1,0 +1,40 @@
+# Offline test environment. Needs no Discord, Gemini or Google credentials.
+#   docker compose -f compose.test.yaml run --rm tests
+#   docker compose -f compose.test.yaml run --rm lint
+name: dobby-test
+services:
+  tests:
+    build:
+      context: .
+      target: test
+    image: dobby:test
+    pull_policy: never
+    init: true
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      # Keep a stray host .env from leaking real credentials into the suite.
+      DOBBY_ENV_FILE: /nonexistent.env
+    command: [python, -m, pytest, -q, -p, no:cacheprovider, --basetemp=/tmp/pytest]
+
+  lint:
+    build:
+      context: .
+      target: test
+    image: dobby:test
+    pull_policy: never
+    init: true
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      RUFF_CACHE_DIR: /tmp/ruff
+    command: [sh, -c, "ruff check bot scripts tests && ruff format --check bot scripts tests"]

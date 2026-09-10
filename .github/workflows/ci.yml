@@ -18,4 +18,11 @@ jobs:
       - run: ruff check bot scripts tests
       - run: ruff format --check bot scripts tests
       - run: python -m pytest -q
+      - run: docker compose --env-file .env.example config --quiet
+      - run: docker compose --env-file .env.example -f compose.auth.yaml config --quiet
+      - run: docker compose -f compose.test.yaml config --quiet
       - run: docker build -t calendar-bot:test .
+      - run: docker run --rm --entrypoint python calendar-bot:test -c "import bot.main; import google.genai"
+      # The same suite the developer runs locally, in the image it ships in.
+      - run: docker compose -f compose.test.yaml run --rm tests
+      - run: docker compose -f compose.test.yaml run --rm lint

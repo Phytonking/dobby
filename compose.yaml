@@ -1,0 +1,36 @@
+name: dobby
+services:
+  dobby:
+    build: .
+    image: dobby:local
+    pull_policy: never
+    user: "${DOBBY_UID:-10001}:${DOBBY_GID:-10001}"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 100
+    mem_limit: 512m
+    cpus: 1.0
+    stop_grace_period: 30s
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    environment:
+      DOBBY_ENV_FILE: /run/secrets/dobby.env
+      GOOGLE_TOKEN_FILE: /run/secrets/google-token.json
+    secrets:
+      - source: dobby_env
+        target: dobby.env
+      - source: google_token
+        target: google-token.json
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+secrets:
+  dobby_env:
+    file: ./.env
+  google_token:
+    file: ./secrets/google-token.json

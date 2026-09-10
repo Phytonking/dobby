@@ -12,16 +12,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--client", default="secrets/google-client.json")
     parser.add_argument("--output", default="secrets/google-token.json")
+    parser.add_argument("--no-browser", action="store_true", help="Print a local authorization link")
+    parser.add_argument("--port", type=int, default=0)
+    parser.add_argument(
+        "--bind", default="localhost", help="Listener address; Docker uses 0.0.0.0 internally"
+    )
     args = parser.parse_args()
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)
     flow = InstalledAppFlow.from_client_secrets_file(args.client, SCOPES)
     credentials = flow.run_local_server(
         host="localhost",
-        port=0,
+        port=args.port,
+        bind_addr=args.bind,
+        open_browser=not args.no_browser,
+        timeout_seconds=300,
         access_type="offline",
         prompt="consent",
-        authorization_prompt_message="",
+        authorization_prompt_message="Open this link in your computer's browser: {url}"
+        if args.no_browser
+        else "",
         success_message="Calendar linked. You can close this tab.",
     )
     if not credentials.refresh_token:

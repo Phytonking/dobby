@@ -1,0 +1,14 @@
+[Unit]
+Description=Pull and apply the tested Dobby container image
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RuntimeDirectory=dobby-update
+RuntimeDirectoryMode=0700
+WorkingDirectory=/opt/dobby
+ExecStart=/bin/sh /opt/dobby/scripts/update-pi.sh
+TimeoutStartSec=15min
+UMask=0077

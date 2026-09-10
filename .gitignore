@@ -13,3 +13,4 @@ __pycache__/
 .coverage
 gha-creds-*.json
 .ruff_cache/
+.docker-test/

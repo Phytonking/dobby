@@ -1,147 +1,168 @@
-# Automatic GitHub → Google Cloud Run deployment
+﻿# Docker deployment: Raspberry Pi and Windows
 
-The supplied workflow deploys a **Cloud Run worker pool**, not a request-driven Cloud Run service. It maintains the Discord Gateway connection with one worker and needs no public HTTP endpoint. Worker instances are billed while idle; use a billing-enabled hosting project and set a budget alert. Gemini can use a separate free-tier project.
+Dobby runs on Windows Docker Desktop (`linux/amd64`) and 64-bit Raspberry Pi OS (`linux/arm64`). Use [README.md](../README.md#set-up-dobby) for initial Discord/Gemini/Google setup. This deployment needs no paid cloud server or Secret Manager.
 
-Complete these one-time steps as the project/repository owner. Commands below are **Bash in Google Cloud Shell** unless labelled PowerShell. No cloud resources are created just by installing or testing this repository locally.
+## Prepare the Pi
 
-## 1. Prepare a dedicated cloud project and identities
-
-Replace the public identifiers below. `REPO_ID` and `OWNER_ID` are numeric GitHub IDs, obtainable using `gh api repos/OWNER/REPO --jq '.id'` and `gh api users/OWNER --jq '.id'` (the repository API's `.owner.id` works for organizations too).
+Install 64-bit Raspberry Pi OS and Docker Engine with Compose using [Docker's Debian instructions](https://docs.docker.com/engine/install/debian/). Pi 4/5 with at least 2 GB RAM is recommended. Confirm:
 
 ```bash
-export PROJECT_ID='your-google-project'
-export REGION='us-central1'
-export GITHUB_REPO='YOUR_OWNER/YOUR_REPO'
-export REPO_ID='123456789'
-export OWNER_ID='1234567'
-export ARTIFACT_REPO='calendar-bot'
-export WORKER_POOL='discord-calendar'
-
-gcloud config set project "$PROJECT_ID"
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com calendar-json.googleapis.com
-export PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
-
-gcloud artifacts repositories create "$ARTIFACT_REPO" --repository-format=docker --location="$REGION"
-gcloud iam service-accounts create calendar-runtime --display-name='Discord calendar runtime'
-gcloud iam service-accounts create calendar-deployer --display-name='GitHub calendar deployment'
-export RUNTIME_SA="calendar-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
-export DEPLOY_SA="calendar-deployer@${PROJECT_ID}.iam.gserviceaccount.com"
-
-gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$DEPLOY_SA" --role=roles/run.developer
-gcloud artifacts repositories add-iam-policy-binding "$ARTIFACT_REPO" --location="$REGION" --member="serviceAccount:$DEPLOY_SA" --role=roles/artifactregistry.writer
-gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" --member="serviceAccount:$DEPLOY_SA" --role=roles/iam.serviceAccountUser
+uname -m
+docker compose version
+sudo systemctl enable --now docker
 ```
 
-Use a dedicated project because the deployment identity's Run Developer role is project-scoped. It does not need Owner, Editor, or direct Secret Accessor. The standard Cloud Run service agent must retain its automatically assigned service-agent role to pull same-project images; do not repurpose that identity for the bot.
+Architecture should be `aarch64`. Docker commands assume your trusted user can access Docker, or you run them through `sudo`. Docker group membership is effectively root access.
 
-## 2. Create secrets without putting values in code or shell arguments
+For the optional timer, keep the checkout at `/opt/dobby`:
 
 ```bash
-gcloud secrets create discord-token --replication-policy=automatic
-gcloud secrets create gemini-api-key --replication-policy=automatic
-gcloud secrets create google-calendar-token --replication-policy=automatic
-
-for secret in discord-token gemini-api-key google-calendar-token; do
-  gcloud secrets add-iam-policy-binding "$secret" \
-    --member="serviceAccount:$RUNTIME_SA" --role=roles/secretmanager.secretAccessor
-done
+sudo mkdir -p /opt/dobby
+sudo chown "$(id -u):$(id -g)" /opt/dobby
+git clone https://github.com/YOUR_OWNER/YOUR_REPO.git /opt/dobby
+cd /opt/dobby
+cp .env.example .env
+mkdir -p secrets
+chmod 700 secrets
+chmod 600 .env
+id -u
+id -g
 ```
 
-In Google Cloud Console → Secret Manager, add a version of `discord-token` containing only the Discord bot token and a version of `gemini-api-key` containing only the Gemini key. Add `google-calendar-token` containing the complete contents of the locally generated `secrets/google-token.json`. Use Console's private secret entry/upload control; never put the values in GitHub issues, Actions variables, or command-line arguments.
+Set `DOBBY_UID`/`DOBBY_GID` in `.env` to those IDs, along with the API settings from the README. Compose file secrets preserve host permissions; do not make credentials world-readable to work around a UID mismatch.
 
-Alternatively, with authenticated `gcloud` installed on the local Windows computer, upload the token file directly from PowerShell:
+## Move from Windows to the Pi
+
+Complete Google authorization on Windows with the Docker helper. Transfer configuration and token over SSH/SCP, not Git. In PowerShell, replacing the destination:
 
 ```powershell
-gcloud secrets versions add google-calendar-token --project YOUR_PROJECT_ID --data-file=secrets/google-token.json
+scp .env piuser@raspberrypi.local:/opt/dobby/.env
+scp secrets/google-token.json piuser@raspberrypi.local:/opt/dobby/secrets/google-token.json
 ```
 
-Do not upload `.env`, the entire repository, or the OAuth client file. The token JSON already contains the client information required for refresh. The runtime mounts the token read-only at `/secrets/google-token.json` and keeps refreshed access tokens in memory.
-
-## 3. Trust only your repository's main deployment workflow
-
-Continue in the same Cloud Shell session with the exported variables from step 1:
+Create the destination directories first. Edit the transferred Pi `.env` to match the Pi UID/GID instead of Windows defaults. On Pi:
 
 ```bash
-gcloud iam workload-identity-pools create github --location=global --display-name='GitHub Actions'
-
-gcloud iam workload-identity-pools providers create-oidc calendar-main \
-  --location=global --workload-identity-pool=github \
-  --issuer-uri=https://token.actions.githubusercontent.com \
-  --attribute-mapping='google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id' \
-  --attribute-condition="assertion.repository_id == '${REPO_ID}' && assertion.repository_owner_id == '${OWNER_ID}' && assertion.ref == 'refs/heads/main' && assertion.sub == 'repo:${GITHUB_REPO}:environment:production' && assertion.workflow_ref == '${GITHUB_REPO}/.github/workflows/deploy.yml@refs/heads/main'"
-
-gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
-  --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository_id/${REPO_ID}"
-
-echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/providers/calendar-main"
+cd /opt/dobby
+chmod 600 .env secrets/google-token.json
+docker compose up -d --build
+docker compose logs --tail 50 -f dobby
 ```
 
-The final line prints a public provider resource name, not a secret. Numeric IDs prevent a different repository owner from gaining access by reusing an old repository name. Fork pull requests and other branches do not match this trust condition. If the repo moves or the workflow filename changes, update the condition deliberately.
+**Stop Windows Dobby first** with `docker compose down`. The runtime does not need `google-client.json`; retain it privately on the computer used for relinking. Both runtime files should be owned by the configured UID/GID.
 
-## 4. Configure GitHub
+A Pi with a browser can run the authorization helper itself. On a headless Pi, the Windows-and-transfer method is simpler. The helper callback only accepts host-local connections; do not open its port to the network.
 
-Create a GitHub Actions environment named **production**, restricted to the `main` branch. To deploy automatically on push, leave deployment reviewers optional; protect `main` through PR review instead. In repository Settings → Secrets and variables → Actions → **Variables**, add:
+## Test locally in Docker
 
-| Variable | Example/value |
-| --- | --- |
-| `GCP_PROJECT_ID` | Hosting project ID |
-| `GCP_REGION` | `us-central1` (choose a worker-pool-supported region) |
-| `GCP_ARTIFACT_REPOSITORY` | `calendar-bot` |
-| `GCP_WORKER_POOL` | `discord-calendar` |
-| `GCP_RUNTIME_SERVICE_ACCOUNT` | `calendar-runtime@PROJECT_ID.iam.gserviceaccount.com` |
-| `GCP_DEPLOY_SERVICE_ACCOUNT` | `calendar-deployer@PROJECT_ID.iam.gserviceaccount.com` |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Public provider name printed in step 3 |
-| `DISCORD_GUILD_ID` | Your server ID |
-| `ALLOWED_ROLE_IDS` | Scheduler role ID(s), comma-separated |
-| `ALLOWED_USER_IDS` | Optional specific user IDs; at least this or roles must be set |
-| `ALLOWED_CHANNEL_IDS` | Recommended: scheduling channel IDs only |
-| `MENTION_CHANNEL_IDS` | Exact text channel IDs where mentions and context are enabled |
-| `GOOGLE_CALENDAR_ID` | Team calendar ID; defaults to `primary` |
-| `TEAM_TIMEZONE` | e.g. `America/Denver` |
-| `GEMINI_MODEL` | Defaults to `gemini-2.5-flash-lite` |
+Before deploying to either machine, confirm the image is sound. These run with networking disabled and need no credentials:
 
-No Google JSON key, Discord token, Gemini key, or OAuth token goes into GitHub. Calendar IDs and Discord IDs are identifiers rather than authorization credentials; they are passed as runtime configuration.
+```text
+docker compose -f compose.test.yaml run --rm tests
+docker compose -f compose.test.yaml run --rm lint
+```
 
-Protect `main` against force pushes and require passing CI/review. Restrict who can merge workflow/application changes, change Actions variables/environments, or assign scheduler roles. For an established repository, add CODEOWNERS entries naming your actual trusted maintainers for workflows and security-sensitive code. Enable Dependabot and GitHub secret scanning/push protection where supported. Consider pinning reviewed GitHub Actions to commit SHAs as part of your maintenance policy.
+`compose.test.yaml` builds the Dockerfile's `test` stage, which adds the suite on top of the same base layers the runtime uses. The deployed stage is last in the Dockerfile, so a plain `docker build .` and `docker compose up` still select the runtime image, which contains no tests.
 
-**Deployment authority is secret authority:** a maintainer who can deploy malicious code could read the runtime's secrets, even without a direct Secret Accessor role. Only trusted maintainers should have this power. No application can prevent a Google project Owner from changing IAM or reading project secrets.
+Once `.env` and `secrets/google-token.json` exist, validate them without contacting Discord:
 
-## 5. Push and verify
+```text
+docker compose run --rm --no-deps dobby python -m bot.main --check
+```
 
-Push to `main`. The deploy workflow tests the exact commit, builds without credentials, authenticates with a short-lived GitHub OIDC token, pushes a SHA-tagged image, and calls `gcloud run worker-pools deploy` with one instance and Secret Manager references. It uses the names `discord-token`, `gemini-api-key`, and `google-calendar-token` from step 2.
+Exit `0` prints `config_ok`; exit `2` names the setting to fix. Do this before the first `up` on a new machine, because `restart: unless-stopped` otherwise retries a misconfigured container indefinitely.
 
-Stop any local copy before the first deployment. In Actions, verify the deploy job succeeds, then inspect Cloud Run → Worker pools → discord-calendar → Logs for `bot_ready`. Infrastructure deployment success alone does not prove the Discord token or Google OAuth grant is valid.
+Create `.env` and the `secrets` directory **before** the first `up`. Docker creates a directory when a Compose secret's source file is missing, and that directory then mounts over the runtime credential path. The preflight names this case directly. `python scripts/bootstrap.py` creates both correctly and prints the UID/GID to set on Pi.
 
-Run this live smoke test in a dedicated test calendar/channel:
+## Run on either machine
 
-1. As a user without the role, try `/events` and a bot mention. Verify no calendar data is returned and no event is created.
-2. With the scheduler role, mention the bot with a future title/date/time. Verify the DM preview defaults to one hour. Cancel it and verify no event exists.
-3. Repeat and confirm. Check Google Calendar and `/events` for exactly one event.
-4. Provide a 30-minute duration and verify the override.
-5. Post two discussion messages with title/date/time, then `@Dobby make this a meeting`. Verify the extracted details and DM privacy.
-6. Copy the event ID, rename/reschedule it, and verify unrelated Calendar fields remain intact.
-7. Prepare an edit, modify the event directly in Google Calendar, then confirm the old preview. Verify the stale edit is rejected.
-8. Prepare a preview, remove the requester’s scheduler role (and any explicit user allowlist access), then try to confirm. Verify access is denied.
-9. Delete the test event with confirmation. Try double-clicking a confirmation and verify a single operation.
-10. Push a harmless README change to `main`. Verify a new image/revision deploys and the bot reconnects. Pending old previews are expected to expire/fail after replacement.
+```text
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail 50 -f dobby
+```
 
-Tests in CI use mocked external APIs. The local environment used to develop this code did not contain your credentials or a running Docker daemon; the cloud rollout and account integration must be verified with this smoke test.
+The runtime exposes no ports, runs non-root, drops capabilities, has a read-only filesystem and credentials, rotates logs, and caps memory at 512 MB. It restarts unless explicitly stopped. Windows Docker Desktop must remain running; on Pi Docker starts at boot.
 
-## Updates, rotation, rollback and shutdown
+`docker compose down` removes the container, not credentials. After changing credentials, recreate with `docker compose up -d --force-recreate --no-build` so replaced files are remounted. A restart alone may retain an old bind-mounted file.
 
-Normal updates: push to `main`. The workflow serializes deployments and does not cancel a running deployment. A short reconnection window is expected. Do not scale beyond one worker or run multiple copies with the same bot token.
+## Publish images from GitHub
 
-Secrets use `latest`: add a new secret version, then rerun the deploy workflow from `main` to refresh the process. For OAuth expiry/revocation, rerun `scripts/link_google.py` locally and upload its new token file. Revoke compromised Google app grants in the linked Google account; rotate the Discord token and Gemini key in their respective consoles. Disable compromised secret versions after replacement. Changing an allowlist GitHub variable also requires redeployment.
+`.github/workflows/publish.yml` runs on main pushes. It tests the source, validates Compose, then builds/publishes AMD64 and ARM64 images to:
 
-For rollback, revert the faulty commit and push to `main` so all checks rerun. Existing commit-tagged images are also available for a manual worker deployment, but rolling back code does not undo Calendar operations or restore old secret values.
+- `ghcr.io/owner/repository:main`
+- `ghcr.io/owner/repository:sha-COMMIT_SHA`
 
-To stop the bot and ongoing worker compute, in Cloud Shell:
+The workflow uses GitHub's built-in `GITHUB_TOKEN`; no cloud key or application secret is required. PR checks have no package-write permission. Protect main and workflow changes: a trusted image can read runtime credentials.
+
+After the first publish, open the package's GitHub settings and change its visibility to **Public**. A public repository does not necessarily make a new package public. Public pulls require no stored GitHub credential on the Pi. [Container Registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+## Pull a published image on Windows or Pi
+
+Set this in `.env`, using lowercase owner/repository names:
+
+```dotenv
+DOBBY_IMAGE=ghcr.io/your_owner/your_repo:main
+```
+
+Then run:
+
+```text
+docker compose -f compose.yaml -f compose.registry.yaml pull dobby
+docker compose -f compose.yaml -f compose.registry.yaml up -d --no-build --pull never dobby
+```
+
+This reuses the same local secrets and service. `docker compose logs` and `docker compose down` still work because the project name is fixed. Use both files for starts/recreates in registry mode so you do not switch back to local builds. Docker selects the architecture automatically.
+
+## Automatic updates on the Pi
+
+First verify the published-image commands work. Keep the checkout at `/opt/dobby` with `DOBBY_IMAGE` set, then install the timer:
 
 ```bash
-gcloud run worker-pools update discord-calendar --project "$PROJECT_ID" --region "$REGION" --instances=0
+cd /opt/dobby
+sudo install -m 644 deploy/dobby-update.service /etc/systemd/system/dobby-update.service
+sudo install -m 644 deploy/dobby-update.timer /etc/systemd/system/dobby-update.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now dobby-update.timer
+sudo systemctl start dobby-update.service
+systemctl list-timers dobby-update.timer
+sudo journalctl -u dobby-update.service -n 30 --no-pager
 ```
 
-A later push restores one instance. Disable the deploy workflow as well if you want it to remain stopped. Image storage/Secret Manager charges may remain even with zero workers. Configure Artifact Registry cleanup and billing alerts according to your retention needs.
+Every five minutes plus a small randomized delay, the timer runs the trusted local script as root to access Docker. It pulls first: if that fails, the current container stays running. Compose recreates the service when the image/config changed. `flock` prevents concurrent updates. No automatic Git pull occurs; Compose and updater files change only through a deliberate checkout update.
 
-Official references: [worker deployment](https://docs.cloud.google.com/run/docs/deploy-worker-pools), [worker secrets](https://docs.cloud.google.com/run/docs/configuring/workerpools/secrets), [worker scaling/billing](https://docs.cloud.google.com/run/docs/configuring/workerpools/manual-scaling), [GitHub federation](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
+No router ports, webhook endpoint, self-hosted GitHub runner, or container-mounted Docker socket are needed. Workflow completion plus the next timer check determines update time. Updates briefly reconnect Discord and invalidate pending previews.
+
+Only trusted administrators should be able to modify `/opt/dobby`, since the root timer reads its Compose files. Protect the GitHub main branch similarly. Docker restarts a crashed new image but does not automatically roll back to an old one.
+
+Old images are not pruned automatically. Periodically inspect `docker system df` and remove specific unused Dobby images if space is tight.
+
+To stop updates:
+
+```bash
+sudo systemctl disable --now dobby-update.timer
+sudo systemctl stop dobby-update.service
+```
+
+Disable the timer **before** stopping Dobby for maintenance; otherwise the next check starts it again.
+
+## Rollback and configuration updates
+
+Disable the timer, set `DOBBY_IMAGE` to a known-good `:sha-COMMIT_SHA` tag, then run the published-image pull/up commands. This rolls back code, not Calendar operations. A fixed SHA tag prevents newer main pushes from changing the selected version.
+
+Review and run `git pull --ff-only` manually for Compose/updater changes. Reinstall changed systemd units and run `sudo systemctl daemon-reload`. Ignored `.env` and secrets are preserved; do not copy the example over your existing `.env` during updates.
+
+## Live smoke test
+
+1. Without an allowed role/user grant, try `/events` and a mention; no calendar data or writes should result.
+2. As an allowed user, preview a future meeting, check the one-hour default, cancel, and verify no event exists.
+3. Create and confirm; check `/events` and Google Calendar for one event.
+4. Test a 30-minute override and recent-message context.
+5. Rename/reschedule by ID. Prepare an edit, change the event directly in Google Calendar, then confirm the old preview; it should fail as stale.
+6. Remove the scheduler role before confirming a DM preview; access should be denied.
+7. Restart Docker Dobby; verify `bot_ready` and that old previews cannot write.
+8. If updates are enabled, push a harmless documentation change and verify publication plus the Pi update.
+
+## Migrating away from Google Cloud
+
+The Cloud Run workflow is removed, so new pushes no longer deploy there. This does not remove old workers, images, secrets, or IAM grants. If you created any, stop/remove the cloud worker before starting the Pi with the same token and clean up unused resources. Existing cloud resources may still accrue charges until stopped/deleted.

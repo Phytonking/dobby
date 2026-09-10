@@ -1,86 +1,106 @@
-# Architecture
+﻿# Dobby architecture
 
-## Purpose and deployment shape
+## Runtime
 
-One Python 3.14 process connects outbound to Discord's Gateway, parses authorized scheduling requests with Gemini, and uses OAuth to manage a single Google Calendar. Cloud Run **worker pools** fit the persistent Gateway connection and background processing; no public HTTP endpoint or webhook ingress is required. Deployment explicitly requests one instance.
+One Python 3.14 process runs in a Linux Docker container on Windows Docker Desktop (`linux/amd64`) or a 64-bit Raspberry Pi (`linux/arm64`). Outbound Discord Gateway and HTTPS connections handle requests, Gemini planning, and Google Calendar. The normal runtime has no published ports.
+
+The Dockerfile stages are `base` (dependencies and `bot/`), `test` (adds `pyproject.toml`, `scripts/` and `tests/`), and `runtime`. `runtime` is last so a bare `docker build .` selects it, and `publish.yml` pins `target: runtime`; the deployed image therefore never contains the test suite.
 
 ```mermaid
 flowchart TD
-    U[Discord teammate] --> D[Discord Gateway]
-    D --> A[Guild, channel and role/user authorization]
-    A --> S[Slash command: private deferred reply]
-    A --> M[Mention: DM preview; optional six-message context]
-    S --> P[Gemini structured planning]
-    M --> P
-    P --> V[Typed validation and conflict check]
-    V --> C[Requester confirms private preview]
-    C --> R[Recheck authorization, expiry and single use]
-    R --> G[Calendar API: insert, patch or delete]
+    U[Discord teammate] --> A[Server, channel and role checks]
+    A --> P[Gemini structured planning]
+    H[Optional six recent messages] --> P
+    P --> V[Validation and conflict check]
+    V --> C[Private preview and confirmation]
+    C --> R[Authorization, expiry and ETag checks]
+    R --> G[Google Calendar write]
     G --> O[Private result]
-    SM[Secret Manager] --> W[Cloud Run worker process]
-    W --> A
-    GH[Push to main] --> T[CI and container build]
-    T --> F[GitHub OIDC federation]
-    F --> AR[Artifact Registry]
-    AR --> W
+    S[Local credential files] --> M[Read-only Compose mounts]
+    M --> B[Dobby container on Pi or Windows]
+    B --> A
+    GH[Push to main] --> T[Tests and multi-architecture build]
+    T --> CR[GitHub Container Registry]
+    CR --> UP[Optional Pi pull timer]
+    UP --> B
 ```
 
 ## Source structure
 
 | Path | Responsibility |
 | --- | --- |
-| `bot/config.py` | Environment loading, timezone validation, deny-by-default allowlists |
-| `bot/main.py` | Discord lifecycle, slash commands, mentions, bounded context, private previews, cooldowns and confirmation views |
-| `bot/planner.py` | Google Gen AI client, system instruction, structured output, untrusted-context boundary |
-| `bot/models.py` | Strict plan schema, writable field allowlist, timestamp/duration validation, one-hour default |
-| `bot/service.py` | Prepare a proposal without writing; select exact event, reject unsupported event types, retain ETag |
-| `bot/calendar.py` | OAuth HTTP session, paginated reads, conflicts, conditional writes, sanitized errors |
-| `scripts/link_google.py` | Local Desktop OAuth browser flow and private refresh-token file |
-| `scripts/check_secrets.py` | CI check for tracked credential files and common secret formats |
-| `tests/` | Mocked security, scheduling, HTTP, and Discord behavior tests |
-| `Dockerfile` | Non-root worker image with explicitly copied application files |
-| `.github/workflows/` | Unprivileged PR checks and main-only federated deployment |
+| `bot/config.py` | Load local/mounted dotenv; validate settings and allowlists |
+| `bot/main.py` | Discord lifecycle, mentions/context, commands, Dobby voice, private confirmations |
+| `bot/planner.py` | Gemini structured output with context treated as untrusted data |
+| `bot/models.py` | Writable field schema, time validation, duration/default/timezone rules |
+| `bot/service.py` | Prepare without writing; exact event selection and ETags |
+| `bot/calendar.py` | OAuth HTTP, pagination, conflicts, conditional writes, sanitized errors |
+| `scripts/link_google.py` | Desktop OAuth loopback authorization, directly or through Docker |
+| `scripts/check_secrets.py` | Baseline tracked-file credential guard |
+| `scripts/bootstrap.py` | Create `.env`/`secrets/` before first run; repair Docker-created directories |
+| `scripts/update-pi.sh` | Locked pull/recreate of configured registry image |
+| `compose.yaml` | Secure local runtime for both platforms |
+| `compose.auth.yaml` | One-shot OAuth helper with loopback-only host callback |
+| `compose.registry.yaml` | Optional published-image override |
+| `compose.test.yaml` | Offline test/lint services built from the Dockerfile `test` stage |
+| `deploy/` | Optional systemd Pi update timer |
+| `.github/workflows/` | PR checks and main-only image publication |
+| `tests/` | Mocked behavior/security tests |
 
-## Request processing
+## Request lifecycle
 
-Discord-facing replies use a Dobby-inspired voice through fixed presentation text in `bot/main.py`.
-This adds no model calls: the planner still returns structured scheduling data, and calendar titles,
-descriptions, timestamps, permissions, and confirmation behavior are not rewritten for the persona.
+1. Reject other servers, unauthorized users/roles and channels before calling Google/Gemini. No administrator bypass. Mention context also requires current membership and View Channel/Read Message History in a configured ordinary text channel.
+2. Defer slash responses privately. For mentions, open a DM before fetching context. Blocked DMs never cause a public calendar preview.
+3. Context language triggers at most six preceding same-channel messages, excluding bots and limiting each text to 1,500 characters. No attachments, linked pages, other channels or archives. Discord's message cache is disabled.
+4. Updates/deletes fetch the user-supplied exact event ID from the fixed calendar. Gemini cannot choose another calendar or arbitrary event ID.
+5. Gemini sees current team-local time, the request, optional context and selected event fields. Typed validation only permits title, start/end, description and location operations.
+6. Validate future aware timestamps, positive duration up to 24 hours and supported event types. New meetings default to one hour; moved meetings preserve duration. Clarify missing/ambiguous details. No write occurs during planning.
+7. Show a two-minute single-use private confirmation. DM buttons fetch current guild roles; slash buttons check the fresh interaction membership. Dobby's voice is fixed presentation text: no extra AI call, no rewriting Calendar fields.
+8. Serialize API work through one bounded executor. Recheck conflicts before writes. PATCH/DELETE carry `If-Match` with the preview ETag; stale events fail. Creates use a deterministic SHA-256 ID based on the Discord request.
+9. Consume the view before awaiting a write, preventing double-click duplication. Report results privately. After uncertain network failures users must inspect `/events` before issuing another request.
 
-1. Reject other servers, unauthorized users/roles, and disallowed channels before Calendar or Gemini calls. There is no implicit access for Discord administrators. Mention context additionally requires an explicitly configured channel and current membership with View Channel/Read Message History.
-2. Acknowledge slash commands privately before slow API work. Mentions open a DM before fetching context; blocked DMs do not result in a public calendar preview.
-3. Explicit context language causes a REST history read of at most six previous messages in the same text channel, excluding bots. Only text and timestamps are passed to Gemini, with a 1,500-character limit per message. Normal complete requests do not read history. No attachments, links, or other channels are fetched. Discord's message cache is disabled.
-4. Updates/deletes require an explicit event ID supplied by the requester. The application fetches that event from the fixed configured calendar. Gemini cannot select a different calendar, choose an event ID, change credentials, or call arbitrary tools.
-5. Gemini receives the request, current team-local time, optional bounded history, and only the selected event's relevant fields. It returns a Pydantic-validated operation. Calendar/history text is designated untrusted data. Prompt instructions are a parsing aid, not the security boundary.
-6. Application code allows only title, start/end, description and location writes. It validates aware timestamps, positive duration of at most 24 hours, future starts, supported event types and required fields. A missing create end defaults to one hour after start. Missing/ambiguous title/date/time requests return a clarification. No write occurs in planning.
-7. The private proposal includes the exact operation, event title/times and changed fields. The requester confirms within two minutes. Mention confirmations fetch current server membership and roles again because DM interaction payloads have no guild context; slash confirmations use the fresh guild interaction payload.
-8. The write is queued through one thread executor, keeping the event loop responsive and serializing Calendar access. Relevant conflicts are checked again immediately before writing. PATCH/DELETE include the previewed ETag in `If-Match`; a changed event fails with 412 instead of being overwritten.
-9. The result stays private. Creates use a deterministic SHA-256 event ID derived from the Discord request ID, which is valid Calendar base32hex syntax. The view is consumed before awaiting a write to prevent duplicate clicks. A new user request has a new ID; uncertain network results require checking the calendar before retrying.
+## Secrets and access boundaries
 
-## Security and trust boundaries
+Local `.env` contains API credentials and settings; `secrets/google-token.json` contains OAuth credentials. Compose mounts both read-only. `DOBBY_ENV_FILE` selects the mounted dotenv, and an explicit environment override selects the mounted token path. Credential values do not enter image build arguments or Compose container environment configuration. Dotenv interpolation is disabled to preserve literal credential characters; explicit process environment values take precedence.
 
-The Discord allowlist grants delegated bot access to the **whole configured team calendar** for supported operations. It does not sign users into Google, expose refresh tokens, or alter calendar ACLs. Existing Google sharing and invitee access are independent and remain governed by Google.
+Compose secrets are local bind-backed files, not encrypted storage. On Pi match the container UID/GID to their owner, with files mode `600` and directory mode `700`. On Windows use account ACLs. The runtime is non-root with all capabilities dropped, no published ports, a read-only filesystem, and bounded memory/logs. Host root, Docker administrators, and deployed code can still read secrets.
 
-The runtime Google service account has Secret Accessor only on the three application secrets. It has no user-calendar identity of its own; user Calendar access comes from the locally authorized OAuth refresh token. The OAuth scope is `calendar.events`, not Gmail, Drive, or calendar-sharing administration. That scope can reach multiple calendars belonging to the linked account, so a dedicated Google account with access only to the intended calendar is the strongest isolation for a compromised token.
+The OAuth helper is a separate Compose project so it can run before a token exists. It mounts the secrets directory writable and publishes port 8765 only on host loopback. Its internal listener binds all container interfaces so Docker forwarding works, while the Google redirect URI remains localhost. The SDK validates OAuth state; the flow times out after five minutes and writes credentials without printing them. A headless Pi receives the token through SCP after Windows authorization.
 
-GitHub deployment uses OIDC restricted to the repository's numeric ID and owner ID, `main`, the production environment, and the named deploy workflow. The deploy service account can deploy workers and push images, and can act as the runtime service account. It has no direct Secret Accessor grant. **Anyone able to deploy arbitrary runtime code can nevertheless obtain runtime secrets**; trusted main-branch maintainers and Google project administrators are part of the trusted computing base. Protect main, workflow changes, environment settings, IAM, and Discord role assignment accordingly.
+Discord allowlists delegate management of all supported events in the configured calendar, without granting Google login access or changing calendar ACLs. The OAuth `calendar.events` scope can reach other calendars accessible to the account. A dedicated Google account limits the impact of token compromise.
 
-Secrets are excluded from Git and Docker contexts; Docker copies only dependency metadata and `bot/`. GitHub's generated temporary credentials are also ignored. Runtime errors expose only controlled messages/status codes; raw SDK exceptions and message bodies are not logged by application handlers. Do not enable SDK debug logging in production.
+Errors do not log raw API bodies, prompts, event details or credentials. Operation logs contain Discord actor/server IDs. Free-tier Gemini may use data for product improvement; channel participation and meeting sensitivity must suit the API terms.
 
-Free-tier Gemini is an external data processor whose terms permit product improvement use. Context and selected event text leave Discord/Google Calendar for Gemini. Restrict participating channels and use suitable account/tier terms for sensitive teams. Authorized recipients can retain or forward DM/ephemeral content; private responses are not DRM.
+## Image delivery and update trust
 
-## Persistence, failure handling and limits
+Main pushes verify code and publish AMD64/ARM64 images with GitHub's built-in token. No cloud key or bot credentials are needed. Public package visibility enables anonymous Pi pulls; PR checks have no registry-write permission.
 
-Google Calendar is the event store. No application database, history archive, token database, or conversation memory exists. OAuth access tokens refresh in memory from a read-only Secret Manager token mount. Relinking creates a new refresh-token secret version; restart/redeploy to use it.
+The optional Pi timer runs a trusted local updater as root for Docker access, pulling before replacing and using `flock` to prevent overlap. Failed pulls preserve the current container; bad images are not automatically rolled back. It does not automatically pull Git: Compose and updater files change through deliberate checkout updates. Only trusted administrators may edit that checkout, and only trusted maintainers may publish images; either can deploy code that accesses secrets.
 
-Proposals and cooldowns are in-memory and are lost on restart. Pending confirmations intentionally stop working after deploy. A ten-second per-user cooldown and four-job bound reduce API pressure. Network clients have timeouts; the Discord connection remains responsive while synchronous API work executes in the worker thread.
+Updates replace the single container, briefly reconnect Discord and invalidate previews. Windows manual pulls use the same registry override. No external deployment endpoint, self-hosted Actions runner, or container-mounted Docker socket is used.
 
-Only one process/instance is supported. Cloud Run revisions may briefly overlap while rolling out; create IDs reduce duplicate insertion risk for the same Discord request, but this is not a distributed exactly-once system. Do not run a local copy and cloud copy with the same token. Before high-volume/multi-instance expansion, introduce a durable operation ledger, distributed locking, and leader election or Discord sharding.
+## Cloud deployment status
 
-Calendar conflict checks cannot be atomic with external calendar writers. The bot does not inspect each attendee's availability, schedule recurring events, or manage guest lists. Keep these limits explicit instead of allowing Gemini to imply that unsupported operations succeeded.
+The runtime is host-agnostic and already satisfies what a cloud platform needs: it configures entirely from environment variables (`load_dotenv` runs with `override=False`, so injected variables win over any `.env`), opens no listening port, writes nothing to disk, and refreshes access tokens in memory only. A read-only root filesystem and no persistent volume are sufficient.
 
-## Delivery and verification
+A working deployment existed and was removed: `.github/workflows/deploy.yml` at the initial commit deploys a Cloud Run **worker pool** — the correct primitive for a gateway bot with no HTTP port — with `--instances 1` and the OAuth token mounted as a file via `--set-secrets '/secrets/google-token.json=…'`. Recovering it is a workflow change; the application code needs none.
 
-PR jobs have read-only repository permissions and no cloud identity. Pushes to main run checks before the deployment job, build before obtaining federated credentials, push a commit-SHA image, then deploy with secret references and non-secret environment configuration. Secrets never enter image build arguments.
+Three things still need doing before that path is live again:
 
-Automated tests mock external APIs and cover permission rejection, confirmation ownership/expiry/revocation, duplicate clicks, time validation/defaults, stale writes, pagination, conflict handling, and mention privacy/context. Real OAuth, model parsing, Discord permissions, and cloud rollout still require the documented live smoke test with the owner's credentials.
+- **Restore and update the workflow.** It predates the multi-stage Dockerfile, so its build step should pin `target: runtime`, matching `publish.yml`.
+- **Provide the OAuth token as a file.** `GOOGLE_TOKEN_FILE` must point at a real file; the token is the one setting that cannot be an environment variable. This requires a platform that mounts secrets as files.
+- **Pin the instance count to exactly one.** Per-user cooldowns are a process-local dict and confirmations are non-persistent `discord.ui.View` objects, so a second replica would duplicate gateway traffic and strand confirmation buttons on the instance that lacks their view. This is the same single-instance rule the Pi and Windows hosts follow.
+
+Testing-mode OAuth refresh tokens expiring in roughly seven days are more disruptive remotely, since relinking needs a local browser and then a redeployed secret. An always-on single instance also bills continuously while idle, which is why local hosting is the documented default. Previously created cloud resources, if any, need separate cleanup.
+
+## Persistence and operating limits
+
+Google Calendar is the event store. There is no application database, message archive or conversation memory. Host credential files survive replacement; access tokens refresh in memory. Relinked token files require container recreation to remount reliably.
+
+One active instance per token is supported. Stop Windows before starting Pi, or use a separate test token/calendar. A ten-second per-user cooldown, four-job bound and network timeouts limit pressure. Docker restarts after crashes/boot while the engine is running. Windows sleep interrupts hosting. Disable the update timer before intentionally stopping the service.
+
+Conflict checks are not atomic with external Calendar writers. The bot does not inspect each attendee's private calendar, add guests, create conferences, share calendars or edit recurring/all-day events. API free quotas are independent of local hosting.
+
+## Verification
+
+Mocked tests cover authorization, confirmation ownership/revocation/expiry, duplicate clicks, durations, timezone handling, stale writes, pagination, conflicts and mention privacy. CI validates every Compose file, builds the runtime, then runs the suite and lint inside the `test` image via `compose.test.yaml` with networking disabled and no credentials. `bot.main --check` validates settings and the token file offline, exiting `2` with an actionable message; publication builds both architectures. Live Discord/Google testing still needs the owner's credentials. The deployment guide contains the live smoke test.

@@ -8,6 +8,10 @@ class UserError(Exception):
     pass
 
 
+class ConfigError(Exception):
+    """Startup misconfiguration. Messages are authored here, so they are safe to display."""
+
+
 class Plan(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["create", "update", "delete", "clarify"]

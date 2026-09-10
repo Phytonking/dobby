@@ -4,14 +4,16 @@ from datetime import datetime, timedelta
 import io
 import json
 import logging
+import os
 import re
+import sys
 import time
 from zoneinfo import ZoneInfo
 import discord
 from discord import app_commands
 from .calendar import Calendar
 from .config import Config
-from .models import UserError
+from .models import ConfigError, UserError
 from .planner import Planner
 from .service import Scheduler
 
@@ -392,11 +394,53 @@ class Bot(discord.Client):
         self.planner.client.close()
 
 
-def main():
+def check_token_file(config):
+    """Fail early with an actionable message; never reveal the token contents."""
+    path = config.token_file
+    if os.path.isdir(path):
+        raise ConfigError(
+            f"{path} is a directory, not a file. Docker creates one when the host file is missing. "
+            "Remove it, then run the account-linking step before starting the bot."
+        )
+    if not os.path.exists(path):
+        raise ConfigError(f"Google token file not found at {path}. Run the account-linking step first.")
+    try:
+        with open(path, encoding="utf-8") as stream:
+            saved = json.load(stream)
+    except OSError, ValueError:
+        raise ConfigError(f"Google token file at {path} is unreadable or not valid JSON.") from None
+    absent = [k for k in ("refresh_token", "client_id", "client_secret") if not saved.get(k)]
+    if absent:
+        raise ConfigError(
+            f"Google token file at {path} is missing: {', '.join(absent)}. Link the account again."
+        )
+
+
+def main(argv=None):
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(message)s")
     log.setLevel(logging.INFO)
+    check_only = "--check" in (sys.argv[1:] if argv is None else argv)
     try:
         config = Config.load()
+        check_token_file(config)
+    except ConfigError as exc:
+        # Authored text with no credential values, so it is safe to show the operator.
+        log.error("startup_failed: %s", exc)
+        raise SystemExit(2) from None
+    except Exception as exc:
+        # Any other loader failure keeps the redacted form: its text may quote the file.
+        log.error("startup_failed type=%s; check configuration and OAuth setup", type(exc).__name__)
+        raise SystemExit(1) from None
+    if check_only:
+        log.info(
+            "config_ok guild=%s timezone=%s model=%s mention_channels=%d",
+            config.guild,
+            config.timezone,
+            config.model,
+            len(config.mention_channels),
+        )
+        return
+    try:
         bot = Bot(config)
         bot.run(config.token, log_handler=None)
     except Exception as exc:

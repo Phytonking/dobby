@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for Dobby image updates every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target
