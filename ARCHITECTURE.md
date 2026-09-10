@@ -33,6 +33,8 @@ flowchart TD
 | `bot/main.py` | Discord lifecycle, mentions/context, commands, channel confirmations |
 | `bot/voice.py` | Dobby's voice: `say(key)` reads `bot/responses/<key>.txt` (20 phrasings each) on every call and picks one at random; nothing is cached |
 | `bot/planner.py` | Gemini structured output with context treated as untrusted data |
+| `bot/lookup.py` | Fuzzy title search over upcoming editable events for update/delete without an ID |
+| `bot/contacts.py` | Name -> email memory (`data/contacts.json`) and the reply parser for Dobby's email questions |
 | `bot/models.py` | Writable field schema, time validation, duration/default/timezone rules |
 | `bot/service.py` | Prepare without writing; exact event selection and ETags |
 | `bot/calendar.py` | OAuth HTTP, pagination, conflicts, conditional writes, sanitized errors |
@@ -96,7 +98,7 @@ Testing-mode OAuth refresh tokens expiring in roughly seven days are more disrup
 
 ## Persistence and operating limits
 
-Google Calendar is the event store. The only application state on disk is `data/contacts.json` (`bot/contacts.py`): a name -> email map written atomically, mounted from `./data` in Compose. Open questions Dobby has asked (missing emails) live in memory for five minutes and are keyed by channel and requester; a reply to Dobby's question resumes the original request. There is no message archive. Host credential files survive replacement; access tokens refresh in memory. Relinked token files require container recreation to remount reliably.
+Google Calendar is the event store. The only application state on disk is `data/contacts.json` (`bot/contacts.py`): a name -> email map written atomically, mounted from `./data` in Compose. Open questions Dobby has asked (missing emails, a meeting title, or a choice between similar events) live in memory for five minutes and are keyed by channel and requester; a reply to Dobby's question resumes the original request. There is no message archive. Host credential files survive replacement; access tokens refresh in memory. Relinked token files require container recreation to remount reliably.
 
 One active instance per token is supported. Stop Windows before starting Pi, or use a separate test token/calendar. A ten-second per-user cooldown, four-job bound and network timeouts limit pressure. Docker restarts after crashes/boot while the engine is running. Windows sleep interrupts hosting. Disable the update timer before intentionally stopping the service.
 

@@ -126,12 +126,51 @@ def test_preview_times_are_normalized_to_team_zone():
 
 
 @pytest.mark.parametrize("action", ["delete", "update"])
-def test_mutation_requires_explicit_event_id(action):
+def test_mutation_without_event_or_title_asks_for_the_title(action):
+    from bot.service import NeedTitle
+
     planner, calendar = Mock(), Mock()
     planner.plan.return_value = Plan(action=action, summary="New")
-    with pytest.raises(UserError, match="exact event"):
+    with pytest.raises(NeedTitle, match="exact event"):
         Scheduler(planner, calendar, "UTC").prepare("change something", None, 123)
+    calendar.list.assert_not_called()
     calendar.apply.assert_not_called()
+
+
+def upcoming(id, summary, offset_days=5):
+    start = datetime.now(timezone.utc) + timedelta(days=offset_days)
+    return {
+        "id": id,
+        "etag": '"v1"',
+        "summary": summary,
+        "start": {"dateTime": start.isoformat()},
+        "end": {"dateTime": (start + timedelta(hours=1)).isoformat()},
+    }
+
+
+def test_delete_by_title_resolves_a_clear_match_and_marks_the_proposal():
+    planner, calendar = Mock(), Mock()
+    calendar.list.return_value = [upcoming("a", "Design review"), upcoming("b", "Lunch")]
+    planner.plan.return_value = Plan(action="delete", target_title="design review")
+    proposal = Scheduler(planner, calendar, "UTC").prepare("delete the design review", None, 1)
+    assert (proposal.action, proposal.event_id, proposal.etag) == ("delete", "a", '"v1"')
+    assert proposal.resolved_by_title and proposal.existing["id"] == "a"
+    calendar.get.assert_not_called()
+
+
+def test_title_from_reply_overrides_gemini_and_ambiguity_lists_candidates():
+    from bot.service import ChooseEvent
+
+    planner, calendar = Mock(), Mock()
+    calendar.list.return_value = [upcoming("a", "Team sync", 3), upcoming("b", "Team sync", 4)]
+    planner.plan.return_value = Plan(action="delete", target_title=None)
+    scheduler = Scheduler(planner, calendar, "UTC")
+    with pytest.raises(ChooseEvent) as caught:
+        scheduler.prepare("delete it", None, 1, title="team sync")
+    assert [c["id"] for c in caught.value.candidates] == ["a", "b"]
+    assert "event_id:a" in str(caught.value)
+    with pytest.raises(UserError, match="Nothing|no upcoming|found no"):
+        scheduler.prepare("delete it", None, 1, title="quarterly offsite")
 
 
 def test_recurrence_rejected_before_gemini(existing):

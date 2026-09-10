@@ -17,7 +17,7 @@ from .config import Config
 from .contacts import Contacts, mask, parse_pairs, valid_email
 from .models import ConfigError, UserError
 from .planner import Planner
-from .service import NeedContacts, Scheduler
+from .service import ChooseEvent, NeedContacts, NeedTitle, Scheduler
 from .voice import say
 
 log = logging.getLogger("scheduler")
@@ -42,6 +42,17 @@ def preview(proposal):
     lines = [
         say("preview_intro"),
         f"**{proposal.action.title()} meeting**",
+    ]
+    if proposal.resolved_by_title:
+        # Found by title rather than ID: the 🟢/🔴 step doubles as "is this the right one?"
+        lines.append(
+            say(
+                "confirm_event_match",
+                title=safe(old.get("summary", "(untitled)")),
+                start=safe(old.get("start", {}).get("dateTime", "")),
+            )
+        )
+    lines += [
         f"Title: {safe(merged.get('summary', '(untitled)'))}",
         f"Start: {safe(merged.get('start', {}).get('dateTime', ''))}",
         f"End: {safe(merged.get('end', {}).get('dateTime', ''))}",
@@ -84,13 +95,14 @@ FOLLOWUP_SECONDS = 300
 class Followup:
     """A question Dobby asked in the channel; the requester's reply resumes the request."""
 
-    kind: str  # "emails"
+    kind: str  # "emails" | "title" | "choose"
     prompt_id: int
     request: str
     history: list
     place: dict
     expires: float
-    names: list = field(default_factory=list)
+    names: list = field(default_factory=list)  # emails still needed
+    candidates: list = field(default_factory=list)  # event IDs offered for "choose"
 
 
 def chunks(text, size=1900):
@@ -245,6 +257,30 @@ class Bot(discord.Client):
             self.awaiting.pop((message.channel.id, message.author.id), None)
             await self.handle_request(message, followup.request, followup.history, followup.place)
             return
+        if followup is not None and followup.kind == "title":
+            if not text:
+                await self.mention_reply(message, say("ask_title"))
+                return
+            self.awaiting.pop((message.channel.id, message.author.id), None)
+            await self.handle_request(
+                message, followup.request, followup.history, followup.place, title=text[:200]
+            )
+            return
+        if followup is not None and followup.kind == "choose":
+            picked = re.fullmatch(r"\s*(\d{1,2})\s*\.?\s*", text)
+            index = int(picked.group(1)) if picked else 0
+            if not 1 <= index <= len(followup.candidates):
+                await self.mention_reply(message, say("choose_event_intro"))
+                return
+            self.awaiting.pop((message.channel.id, message.author.id), None)
+            await self.handle_request(
+                message,
+                followup.request,
+                followup.history,
+                followup.place,
+                event_id=followup.candidates[index - 1],
+            )
+            return
         self.awaiting.pop((message.channel.id, message.author.id), None)
         await self.handle_request(message, text)
 
@@ -252,7 +288,7 @@ class Bot(discord.Client):
         """Post one of Dobby's questions in the channel and return the message to reply to."""
         return await message.reply(say(key, **fields), mention_author=False)
 
-    async def handle_request(self, message, request, history=None, place=None):
+    async def handle_request(self, message, request, history=None, place=None, event_id=None, title=None):
         reply = None
         try:
             reply = await message.reply(say("working"), mention_author=False)
@@ -264,16 +300,40 @@ class Bot(discord.Client):
                 history = await self.gather_history(message)
             if place is None:
                 place = describe_place(message.channel)
-            selected = re.search(r"\bevent_id:([a-zA-Z0-9_-]+)", request)
-            event_id = selected.group(1) if selected else None
+            if event_id is None:
+                selected = re.search(r"\bevent_id:([a-zA-Z0-9_-]+)", request)
+                event_id = selected.group(1) if selected else None
+            key = (message.channel.id, message.author.id)
             try:
                 proposal = await self.work(
-                    self.scheduler.prepare, request, event_id, message.id, history, place
+                    self.scheduler.prepare, request, event_id, message.id, history, place, title
                 )
+            except NeedTitle:
+                await reply.edit(content=say("ask_title"))
+                self.awaiting[key] = Followup(
+                    "title", reply.id, request, history, place, time.monotonic() + FOLLOWUP_SECONDS
+                )
+                return
+            except ChooseEvent as exc:
+                rows = [say("choose_event_intro")] + [
+                    f"{i}. {safe(c.get('summary', '(untitled)'))} | {safe(c.get('start', {}).get('dateTime', ''))}"
+                    for i, c in enumerate(exc.candidates, 1)
+                ]
+                await reply.edit(content="\n".join(rows)[:1900])
+                self.awaiting[key] = Followup(
+                    "choose",
+                    reply.id,
+                    request,
+                    history,
+                    place,
+                    time.monotonic() + FOLLOWUP_SECONDS,
+                    candidates=[c["id"] for c in exc.candidates],
+                )
+                return
             except NeedContacts as exc:
                 # Ask for the missing emails; the requester's reply resumes this request.
                 await reply.edit(content=say("ask_email", names=", ".join(exc.names)))
-                self.awaiting[(message.channel.id, message.author.id)] = Followup(
+                self.awaiting[key] = Followup(
                     kind="emails",
                     prompt_id=reply.id,
                     request=request,
@@ -558,6 +618,7 @@ class Bot(discord.Client):
                     "`/schedule request:Move this meeting to October 13 at 2pm event_id:…`\n"
                     "`/schedule request:Delete this meeting event_id:…`\n"
                     "`@Dobby set up a design review Friday at 2pm and invite Maya and Leonard`\n"
+                    "`@Dobby delete the design review` → Dobby finds it by title and asks you to confirm\n"
                     "`/contacts action:add name:Maya email:maya@example.com` → Dobby remembers who to invite\n"
                     "Default duration: 1 hour. Mention Dobby in an enabled channel to schedule; "
                     "recent channel messages and the thread name help Dobby pick a title. Preview appears in this channel or thread. "

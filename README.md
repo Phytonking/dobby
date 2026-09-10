@@ -191,7 +191,7 @@ Ask for the scheduler role and use a channel or thread Dobby is allowed in. Type
 @Dobby schedule a Planning meeting tomorrow at 10am for 45 minutes
 ```
 
-The first request defaults to one hour. Times use the team timezone unless you specify another. Review the preview in the channel or thread. Dobby puts 🟢 and 🔴 reactions on its own preview message: react 🟢 to save the change or 🔴 to discard it. The full details are in the message itself, never in an attached file. No write occurs before confirmation. If details are missing, send a new complete request in the channel; Dobby does not keep an ongoing conversation or send DMs.
+The first request defaults to one hour. Times use the team timezone unless you specify another. Review the preview in the channel or thread. Dobby puts 🟢 and 🔴 reactions on its own preview message: react 🟢 to save the change or 🔴 to discard it. The full details are in the message itself, never in an attached file. No write occurs before confirmation. If a date or time is missing, send a new complete request in the channel. Dobby only keeps a conversation going for its own questions (a missing email, the meeting title, or which of several matches you meant), and only for five minutes. Dobby never sends DMs.
 
 ### Turn a discussion into a meeting
 
@@ -282,6 +282,10 @@ The optional Pi timer checks every five minutes and recreates the container when
 - Authorized users can manage all supported events on the configured calendar. OAuth can reach other calendars available to the linked account; use a dedicated account.
 - Dobby never grants calendar sharing or returns Google credentials to users. Restrict who can assign the scheduler role.
 - Rotate leaked credentials immediately. Removing a file does not remove it from Git history. Enable GitHub push protection where available.
+
+## Deleting or changing a meeting without an ID
+
+`@Dobby delete the design review` works without an event ID. Dobby takes the meeting name from your request or, for "delete that meeting", from the recent conversation, then searches the next 60 days of the calendar for similar titles. A single clear match comes back as a preview that asks "is this the right meeting?", so 🟢 both confirms the match and deletes it. If nothing in the request or conversation names the meeting, Dobby asks for the title; reply to that question and it searches. If several meetings look alike, Dobby lists up to three and you reply with the number. `/schedule` still accepts `event_id` from `/events` for an exact selection.
 
 ## Inviting people
 

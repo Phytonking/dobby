@@ -92,9 +92,9 @@ def test_context_is_bounded_same_channel_and_excludes_bots():
         await Bot.on_message(bot, message)
         message.channel.history.assert_called_once_with(limit=6, before=message)
         args = bot.work.call_args.args
-        assert [row["text"] for row in args[-2]] == ["earlier", "latest"]
-        assert all("author" in row for row in args[-2])
-        assert args[-1] == {"channel": "general", "thread": None}
+        assert [row["text"] for row in args[4]] == ["earlier", "latest"]
+        assert all("author" in row for row in args[4])
+        assert args[5] == {"channel": "general", "thread": None}
         bot.present.assert_awaited_once()
         message.reply.assert_awaited_once()
 
@@ -107,8 +107,8 @@ def test_complete_mention_still_gathers_context_before_planning():
         message.content = "<@5> schedule Planning tomorrow at 10am"
         await Bot.on_message(bot, message)
         message.channel.history.assert_called_once_with(limit=6, before=message)
-        assert bot.work.call_args.args[-2] == []
-        assert bot.work.call_args.args[-1]["channel"] == "general"
+        assert bot.work.call_args.args[4] == []
+        assert bot.work.call_args.args[5]["channel"] == "general"
         message.author.send.assert_not_awaited()
         message.reply.assert_awaited_once()
         assert message.reply.call_args.kwargs["mention_author"] is False
@@ -178,7 +178,7 @@ def test_requester_without_history_permission_gets_no_context_but_still_schedule
         await Bot.on_message(bot, message)
         message.channel.history.assert_not_called()
         bot.work.assert_awaited_once()
-        assert bot.work.call_args.args[-2] == []
+        assert bot.work.call_args.args[4] == []
 
 
 def test_thread_place_includes_parent_channel_name():
@@ -419,5 +419,72 @@ def test_reply_to_an_unrelated_message_is_ignored_and_expired_followups_are_drop
         await Bot.on_message(bot, message)
         assert (40, 1) not in bot.awaiting
         bot.work.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def answer_to(message, prompt_id, content):
+    answer = Mock()
+    answer.author = message.author
+    answer.guild = message.guild
+    answer.channel = message.channel
+    answer.mentions = []
+    answer.content = content
+    answer.reference = Mock(message_id=prompt_id)
+    answer.reply = AsyncMock()
+    answer.reply.return_value.edit = AsyncMock()
+    answer.id = 202
+    return answer
+
+
+def test_delete_without_a_known_meeting_asks_for_title_then_searches_with_the_reply():
+    from bot.service import NeedTitle
+
+    async def run():
+        bot, message = setup()
+        message.content = "<@5> delete that meeting"
+        prompt = message.reply.return_value
+        prompt.id = 700
+        bot.work.side_effect = [NeedTitle(), bot.work.return_value]
+        await Bot.on_message(bot, message)
+        assert "title" in prompt.edit.call_args.kwargs["content"]
+        assert bot.awaiting[(40, 1)].kind == "title"
+
+        await Bot.on_message(bot, answer_to(message, 700, "design review"))
+        args = bot.work.call_args.args
+        assert args[1] == "delete that meeting"
+        assert args[6] == "design review"
+        assert (40, 1) not in bot.awaiting
+        bot.present.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_ambiguous_title_lists_candidates_and_a_number_reply_selects_one():
+    from bot.service import ChooseEvent
+
+    async def run():
+        bot, message = setup()
+        message.content = "<@5> delete the sync"
+        prompt = message.reply.return_value
+        prompt.id = 701
+        candidates = [
+            {"id": "first", "summary": "Sync A", "start": {"dateTime": "2030-01-01T10:00:00Z"}},
+            {"id": "second", "summary": "Sync B", "start": {"dateTime": "2030-01-02T10:00:00Z"}},
+        ]
+        bot.work.side_effect = [ChooseEvent("sync", candidates), bot.work.return_value]
+        await Bot.on_message(bot, message)
+        listing = prompt.edit.call_args.kwargs["content"]
+        assert "1. Sync A" in listing and "2. Sync B" in listing
+        assert bot.awaiting[(40, 1)].candidates == ["first", "second"]
+
+        await Bot.on_message(bot, answer_to(message, 701, "9"))
+        assert bot.work.await_count == 1
+        assert (40, 1) in bot.awaiting
+
+        await Bot.on_message(bot, answer_to(message, 701, "2"))
+        assert bot.work.call_args.args[2] == "second"
+        assert (40, 1) not in bot.awaiting
+        bot.present.assert_awaited_once()
 
     asyncio.run(run())

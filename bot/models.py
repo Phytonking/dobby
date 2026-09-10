@@ -23,6 +23,19 @@ class Plan(BaseModel):
     location: str | None = Field(default=None, max_length=200)
     # People to invite, exactly as the user wrote them (names or email addresses).
     invitees: list[str] = Field(default_factory=list, max_length=20)
+    # For update/delete without a selected event: the meeting the user means.
+    target_title: str | None = Field(default=None, max_length=200)
+
+
+def is_editable(event):
+    """Only active, single, timed, default events can be changed or matched by title."""
+    return not (
+        event.get("recurrence")
+        or event.get("recurringEventId")
+        or "date" in event.get("start", {})
+        or event.get("eventType", "default") != "default"
+        or event.get("status") == "cancelled"
+    )
 
 
 def interval(start, end):
