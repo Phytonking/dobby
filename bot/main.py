@@ -405,7 +405,11 @@ class Bot(discord.Client):
         await self.tree.sync(guild=guild)
 
     async def on_ready(self):
-        log.info("bot_ready guild=%s", self.config.guild)
+        log.info(
+            "bot_ready guild=%s model=%s structured_output=response_json_schema planner_attempts=3",
+            self.config.guild,
+            self.config.model,
+        )
 
     async def on_error(self, event_method, *args, **kwargs):
         log.warning("discord_event_failed event=%s", event_method)

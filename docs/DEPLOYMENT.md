@@ -154,6 +154,35 @@ Review and run `git pull --ff-only` manually for Compose/updater changes. Reinst
 
 ## Live smoke test
 
+### Verify a local-image update
+
+The September 10 diagnostic showed `dobby:local` still sending the legacy
+`response_schema`, despite the source fix. Restarting a container does not rebuild
+the Python files copied into its image. From the Pi checkout, after the fixes have
+been committed and pushed:
+
+```bash
+git pull --ff-only
+docker compose up -d --build --force-recreate dobby
+docker compose logs --tail 50 dobby
+docker compose exec dobby python -c "import inspect; from bot.planner import Planner; print(inspect.getsource(Planner))"
+```
+
+Confirm the startup log contains `structured_output=response_json_schema
+planner_attempts=3` and the running planner uses
+`response_json_schema=Plan.model_json_schema()`. For registry deployments, use the
+published-image pull/up procedure above instead of building `dobby:local`.
+
+The old diagnostic's explicit `response_schema=Plan` negative test will still fail
+with HTTP 400; it is not the production path. A 503 from the JSON Schema path is
+Gemini overload, not schema rejection. Planning now makes up to three attempts
+with exponential backoff and jitter for transient failures, then returns an
+actionable private error. Persistent overload can still prevent scheduling.
+Calendar writes are not retried by this policy. Discord voice-library warnings
+are unrelated to this text-only bot.
+
+### Exercise Discord and Calendar
+
 1. Without an allowed role/user grant, try `/events` and a mention; no calendar data or writes should result.
 2. As an allowed user, preview a future meeting, check the one-hour default, cancel, and verify no event exists.
 3. Create and confirm; check `/events` and Google Calendar for one event.

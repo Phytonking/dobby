@@ -2,16 +2,54 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from .models import Plan, UserError
 
 
 class Planner:
     def __init__(self, config):
         self.config = config
-        self.client = genai.Client(api_key=config.gemini_key, http_options=types.HttpOptions(timeout=45000))
+        self.client = genai.Client(
+            api_key=config.gemini_key,
+            http_options=types.HttpOptions(
+                timeout=45000,
+                # The SDK does not retry unless retry_options is supplied.
+                # Retry only planning, never calendar writes or invalid schemas.
+                retry_options=types.HttpRetryOptions(
+                    attempts=3,
+                    initial_delay=1,
+                    exp_base=2,
+                    max_delay=4,
+                    jitter=1,
+                    http_status_codes=[408, 429, 500, 502, 503, 504],
+                ),
+            ),
+        )
 
     def plan(self, request, existing=None, history=None):
+        try:
+            return self._plan(request, existing, history)
+        except errors.APIError as exc:
+            # Do not expose provider error bodies: they can contain request data.
+            if exc.code in (408, 500, 502, 503, 504):
+                raise UserError(
+                    "Gemini is temporarily unavailable after retries. Please try again shortly. "
+                    "No calendar changes were made."
+                ) from None
+            if exc.code == 429:
+                raise UserError(
+                    "Gemini's rate limit or quota was reached. Please wait before retrying; "
+                    "if this continues, ask the bot administrator to check Gemini quota. "
+                    "No calendar changes were made."
+                ) from None
+            if exc.code == 400:
+                raise UserError(
+                    "Gemini rejected the planning request. Ask the bot administrator to check the "
+                    "configured model and deployed structured-output code. No calendar changes were made."
+                ) from None
+            raise
+
+    def _plan(self, request, existing=None, history=None):
         context = (
             None
             if existing is None
