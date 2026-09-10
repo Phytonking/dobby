@@ -1,6 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import io
 import json
@@ -14,9 +14,10 @@ import discord
 from discord import app_commands
 from .calendar import Calendar
 from .config import Config
+from .contacts import Contacts, mask, parse_pairs, valid_email
 from .models import ConfigError, UserError
 from .planner import Planner
-from .service import Scheduler
+from .service import NeedContacts, Scheduler
 from .voice import say
 
 log = logging.getLogger("scheduler")
@@ -48,6 +49,8 @@ def preview(proposal):
     for key in ("description", "location"):
         if key in proposal.body:
             lines.append(f"{key.title()}: {safe(proposal.body[key])}")
+    if proposal.attendees:
+        lines.append("Invitees: " + ", ".join(safe(a) for a in proposal.attendees))
     if proposal.action == "update":
         lines.append("Changed fields: " + ", ".join(proposal.body))
     if old.get("attendees"):
@@ -72,6 +75,22 @@ class PendingConfirmation:
     mention: bool  # mention previews also enforce MENTION_CHANNEL_IDS on reauthorization
     expires: float
     used: bool = False
+
+
+FOLLOWUP_SECONDS = 300
+
+
+@dataclass
+class Followup:
+    """A question Dobby asked in the channel; the requester's reply resumes the request."""
+
+    kind: str  # "emails"
+    prompt_id: int
+    request: str
+    history: list
+    place: dict
+    expires: float
+    names: list = field(default_factory=list)
 
 
 def chunks(text, size=1900):
@@ -100,13 +119,15 @@ class Bot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.calendar = Calendar(config)
         self.planner = Planner(config)
-        self.scheduler = Scheduler(self.planner, self.calendar, config.timezone)
+        self.contacts = Contacts(config.contacts_file)
+        self.scheduler = Scheduler(self.planner, self.calendar, config.timezone, self.contacts)
         # One worker serializes Calendar credential refreshes and conflict checks/writes.
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.pending = 0
         self.cooldowns = {}
         self.confirmations = {}
         self.expiry_tasks = {}
+        self.awaiting = {}  # (channel_id, user_id) -> Followup
         self.register_commands()
 
     def allowed(self, interaction):
@@ -172,34 +193,96 @@ class Bot(discord.Client):
         except discord.HTTPException as exc:
             return denied("discord_lookup_failed", exc.status)
 
+    def pending_followup(self, message):
+        """The open question this message answers, if it replies to Dobby's prompt."""
+        key = (message.channel.id, message.author.id)
+        followup = self.awaiting.get(key)
+        if followup is None:
+            return None
+        if time.monotonic() >= followup.expires:
+            del self.awaiting[key]
+            return None
+        reference = getattr(message, "reference", None)
+        if reference is not None and getattr(reference, "message_id", None) == followup.prompt_id:
+            return followup
+        return None
+
     async def on_message(self, message):
         if (
             message.author.bot
             or not message.guild
             or message.guild.id != self.config.guild
             or not self.config.mentionable(message.channel.id)
-            or self.user not in message.mentions
         ):
+            return
+        followup = self.pending_followup(message)
+        mentioned = self.user in message.mentions
+        if not mentioned and followup is None:
             return
         if not await self.member_allowed(message.author.id, message.channel.id):
             await self.mention_reply(message, say("not_authorized"))
             return
-        if not self.take_cooldown(message.author.id):
+        # A reply to Dobby's own question continues the earlier request without a new cooldown.
+        if followup is None and not self.take_cooldown(message.author.id):
             await self.mention_reply(message, say("cooldown"))
             return
+        text = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
+        if followup is not None and followup.kind == "emails":
+            pairs = parse_pairs(text, followup.names)
+            if not pairs:
+                await self.mention_reply(message, say("contact_invalid_email"))
+                return
+            for name, email in pairs.items():
+                self.contacts.save(name, email, added_by=message.author.id)
+                followup.names.remove(name)
+                await self.mention_reply(message, say("contact_saved", name=name))
+            if followup.names:
+                followup.prompt_id = (
+                    await self.ask(message, "ask_email", names=", ".join(followup.names))
+                ).id
+                followup.expires = time.monotonic() + FOLLOWUP_SECONDS
+                return
+            self.awaiting.pop((message.channel.id, message.author.id), None)
+            await self.handle_request(message, followup.request, followup.history, followup.place)
+            return
+        self.awaiting.pop((message.channel.id, message.author.id), None)
+        await self.handle_request(message, text)
+
+    async def ask(self, message, key, **fields):
+        """Post one of Dobby's questions in the channel and return the message to reply to."""
+        return await message.reply(say(key, **fields), mention_author=False)
+
+    async def handle_request(self, message, request, history=None, place=None):
         reply = None
         try:
             reply = await message.reply(say("working"), mention_author=False)
-            request = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
             if not request or len(request) > 2000:
                 raise UserError("Mention me with a meeting request under 2,000 characters.")
             # Context is gathered before planning so Gemini can infer a title from the
             # discussion instead of asking. Bounded, same-channel, text only, never persisted.
-            history = await self.gather_history(message)
-            place = describe_place(message.channel)
+            if history is None:
+                history = await self.gather_history(message)
+            if place is None:
+                place = describe_place(message.channel)
             selected = re.search(r"\bevent_id:([a-zA-Z0-9_-]+)", request)
             event_id = selected.group(1) if selected else None
-            proposal = await self.work(self.scheduler.prepare, request, event_id, message.id, history, place)
+            try:
+                proposal = await self.work(
+                    self.scheduler.prepare, request, event_id, message.id, history, place
+                )
+            except NeedContacts as exc:
+                # Ask for the missing emails; the requester's reply resumes this request.
+                await reply.edit(content=say("ask_email", names=", ".join(exc.names)))
+                self.awaiting[(message.channel.id, message.author.id)] = Followup(
+                    kind="emails",
+                    prompt_id=reply.id,
+                    request=request,
+                    history=history,
+                    place=place,
+                    expires=time.monotonic() + FOLLOWUP_SECONDS,
+                    names=list(exc.names),
+                )
+                return
             # Recheck access if membership changed during planning.
             if not await self.member_allowed(message.author.id, message.channel.id):
                 raise UserError("Your calendar access is no longer authorized.")
@@ -413,6 +496,54 @@ class Bot(discord.Client):
             except Exception as exc:
                 await interaction.edit_original_response(content=self.error(exc))
 
+        @self.tree.command(
+            name="contacts", description="Teach Dobby who to invite: add, list or remove emails"
+        )
+        @app_commands.guild_only()
+        @app_commands.describe(
+            action="add saves a name and email, list shows names, remove forgets one",
+            name="The name people use in requests, e.g. Maya",
+            email="Required for add",
+        )
+        @app_commands.choices(
+            action=[
+                app_commands.Choice(name="add", value="add"),
+                app_commands.Choice(name="list", value="list"),
+                app_commands.Choice(name="remove", value="remove"),
+            ]
+        )
+        async def contacts(
+            interaction: discord.Interaction,
+            action: app_commands.Choice[str],
+            name: app_commands.Range[str, 1, 100] | None = None,
+            email: app_commands.Range[str, 3, 254] | None = None,
+        ):
+            if not self.allowed(interaction):
+                await interaction.response.send_message(say("not_authorized"), ephemeral=True)
+                return
+            choice = action.value
+            if choice == "list":
+                rows = self.contacts.all()
+                text = (
+                    say("contacts_list_intro")
+                    + "\n"
+                    + "\n".join(f"{safe(n)}: {mask(e)}" for n, e in rows.items())
+                    if rows
+                    else say("contacts_empty")
+                )
+            elif not name:
+                text = say("needs_help", question="Give Dobby the name to add or remove.")
+            elif choice == "remove":
+                text = say(
+                    "contact_removed" if self.contacts.remove(name) else "contact_unknown", name=safe(name)
+                )
+            elif not email or not valid_email(email.strip().strip("<>")):
+                text = say("contact_invalid_email")
+            else:
+                self.contacts.save(name, email, added_by=interaction.user.id)
+                text = say("contact_saved", name=safe(name))
+            await interaction.response.send_message(text[:1900], ephemeral=True)
+
         @self.tree.command(name="calendar_help", description="Show scheduling examples and privacy details")
         @app_commands.guild_only()
         async def help_command(interaction: discord.Interaction):
@@ -426,6 +557,8 @@ class Bot(discord.Client):
                     "`/events days:30` → copy an event ID\n"
                     "`/schedule request:Move this meeting to October 13 at 2pm event_id:…`\n"
                     "`/schedule request:Delete this meeting event_id:…`\n"
+                    "`@Dobby set up a design review Friday at 2pm and invite Maya and Leonard`\n"
+                    "`/contacts action:add name:Maya email:maya@example.com` → Dobby remembers who to invite\n"
                     "Default duration: 1 hour. Mention Dobby in an enabled channel to schedule; "
                     "recent channel messages and the thread name help Dobby pick a title. Preview appears in this channel or thread. "
                     "Changes require your confirmation. Existing guests receive Google notifications. "

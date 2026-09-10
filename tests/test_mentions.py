@@ -20,6 +20,11 @@ def setup(mention_channels=frozenset({40})):
     bot.member_allowed = AsyncMock(return_value=True)
     bot.mention_reply = Bot.mention_reply.__get__(bot)
     bot.gather_history = Bot.gather_history.__get__(bot)
+    bot.pending_followup = Bot.pending_followup.__get__(bot)
+    bot.handle_request = Bot.handle_request.__get__(bot)
+    bot.ask = Bot.ask.__get__(bot)
+    bot.awaiting = {}
+    bot.contacts = Mock()
     bot.present = AsyncMock()
     bot.take_cooldown.return_value = True
     bot.work = AsyncMock(
@@ -52,6 +57,7 @@ def setup(mention_channels=frozenset({40})):
     message.channel.history = Mock(side_effect=no_history)
     message.id = 100
     message.mentions = [bot.user]
+    message.reference = None
     message.content = "<@5> make this a meeting"
     message.reply = AsyncMock()
     message.reply.return_value.edit = AsyncMock()
@@ -337,5 +343,81 @@ def test_empty_mention_channels_still_enforces_membership_and_guild():
         message.guild.id = 11
         await Bot.on_message(bot, message)
         bot.member_allowed.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_unknown_invitee_asks_for_email_then_reply_saves_and_resumes():
+    from bot.service import NeedContacts
+
+    async def run():
+        bot, message = setup()
+        message.content = "<@5> schedule Sync tomorrow at 10am and invite Maya"
+        prompt = message.reply.return_value
+        prompt.id = 555
+        bot.work.side_effect = [NeedContacts(["Maya"]), bot.work.return_value]
+        await Bot.on_message(bot, message)
+        assert "Maya" in prompt.edit.call_args.kwargs["content"]
+        followup = bot.awaiting[(40, 1)]
+        assert followup.names == ["Maya"] and followup.prompt_id == 555
+        bot.present.assert_not_awaited()
+
+        answer = Mock()
+        answer.author = message.author
+        answer.guild = message.guild
+        answer.channel = message.channel
+        answer.mentions = []
+        answer.content = "maya@example.com"
+        answer.reference = Mock(message_id=555)
+        answer.reply = AsyncMock()
+        answer.reply.return_value.edit = AsyncMock()
+        answer.id = 101
+        await Bot.on_message(bot, answer)
+        bot.contacts.save.assert_called_once_with("Maya", "maya@example.com", added_by=1)
+        assert (40, 1) not in bot.awaiting
+        # The original request is re-run with the same context, not the email reply text.
+        args = bot.work.call_args.args
+        assert args[1] == "schedule Sync tomorrow at 10am and invite Maya"
+        bot.present.assert_awaited_once()
+        bot.take_cooldown.assert_called_once()
+
+    asyncio.run(run())
+
+
+def test_unparseable_email_reply_keeps_waiting():
+    import time
+    from bot.main import Followup
+
+    async def run():
+        bot, message = setup()
+        bot.awaiting[(40, 1)] = Followup("emails", 555, "req", [], {}, time.monotonic() + 60, ["Maya"])
+        message.mentions = []
+        message.content = "no idea"
+        message.reference = Mock(message_id=555)
+        await Bot.on_message(bot, message)
+        bot.contacts.save.assert_not_called()
+        assert (40, 1) in bot.awaiting
+        assert "email" in message.reply.call_args.args[0]
+        bot.work.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_reply_to_an_unrelated_message_is_ignored_and_expired_followups_are_dropped():
+    import time
+    from bot.main import Followup
+
+    async def run():
+        bot, message = setup()
+        bot.awaiting[(40, 1)] = Followup("emails", 555, "req", [], {}, time.monotonic() + 60, ["Maya"])
+        message.mentions = []
+        message.reference = Mock(message_id=999)
+        await Bot.on_message(bot, message)
+        bot.work.assert_not_awaited()
+        bot.awaiting[(40, 1)].expires = 0
+        message.reference = Mock(message_id=555)
+        await Bot.on_message(bot, message)
+        assert (40, 1) not in bot.awaiting
+        bot.work.assert_not_awaited()
 
     asyncio.run(run())

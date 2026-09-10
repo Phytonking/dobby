@@ -42,6 +42,11 @@ def main():
     secure(secrets)
     print(f"Ready {secrets.name}{os.sep}")
 
+    data = ROOT / "data"
+    data.mkdir(exist_ok=True)
+    secure(data)
+    print(f"Ready {data.name}{os.sep} (contact memory)")
+
     if os.name != "nt":
         print("Set DOBBY_UID/DOBBY_GID in .env to:", f"{os.getuid()}/{os.getgid()}")
 

@@ -96,11 +96,11 @@ Testing-mode OAuth refresh tokens expiring in roughly seven days are more disrup
 
 ## Persistence and operating limits
 
-Google Calendar is the event store. There is no application database, message archive or conversation memory. Host credential files survive replacement; access tokens refresh in memory. Relinked token files require container recreation to remount reliably.
+Google Calendar is the event store. The only application state on disk is `data/contacts.json` (`bot/contacts.py`): a name -> email map written atomically, mounted from `./data` in Compose. Open questions Dobby has asked (missing emails) live in memory for five minutes and are keyed by channel and requester; a reply to Dobby's question resumes the original request. There is no message archive. Host credential files survive replacement; access tokens refresh in memory. Relinked token files require container recreation to remount reliably.
 
 One active instance per token is supported. Stop Windows before starting Pi, or use a separate test token/calendar. A ten-second per-user cooldown, four-job bound and network timeouts limit pressure. Docker restarts after crashes/boot while the engine is running. Windows sleep interrupts hosting. Disable the update timer before intentionally stopping the service.
 
-Conflict checks are not atomic with external Calendar writers. The bot does not inspect each attendee's private calendar, add guests, create conferences, share calendars or edit recurring/all-day events. API free quotas are independent of local hosting.
+Conflict checks are not atomic with external Calendar writers. The bot does not inspect each attendee's private calendar, create conferences, share calendars or edit recurring/all-day events. Guests are added by merging with the existing attendee list because PATCH replaces the array. API free quotas are independent of local hosting.
 
 ## Verification
 

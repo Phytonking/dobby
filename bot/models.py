@@ -21,6 +21,8 @@ class Plan(BaseModel):
     end: str | None = None
     description: str | None = Field(default=None, max_length=1000)
     location: str | None = Field(default=None, max_length=200)
+    # People to invite, exactly as the user wrote them (names or email addresses).
+    invitees: list[str] = Field(default_factory=list, max_length=20)
 
 
 def interval(start, end):
@@ -37,7 +39,7 @@ def interval(start, end):
     return a, b
 
 
-def event_body(plan, existing, zone):
+def event_body(plan, existing, zone, emails=()):
     if plan.action == "create" and not (plan.summary and plan.summary.strip()):
         raise UserError("Please supply a meeting title.")
     body = {
@@ -64,6 +66,13 @@ def event_body(plan, existing, zone):
             start={"dateTime": a.astimezone(ZoneInfo(zone)).isoformat(), "timeZone": zone},
             end={"dateTime": b.astimezone(ZoneInfo(zone)).isoformat(), "timeZone": zone},
         )
+    if emails:
+        # PATCH replaces the whole attendee array, so merge with existing guests.
+        current = [a for a in (existing or {}).get("attendees", []) if a.get("email")]
+        known = {a["email"].lower() for a in current}
+        added = [{"email": e} for e in dict.fromkeys(e.lower() for e in emails) if e not in known]
+        if added or plan.action == "create":
+            body["attendees"] = current + added
     if not body:
         raise UserError("No changes were requested.")
     return body

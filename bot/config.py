@@ -23,6 +23,7 @@ class Config:
     timezone: str
     mention_channels: frozenset[int] = frozenset()
     context_limit: int = 12
+    data_dir: str = "data"
 
     @classmethod
     def load(cls):
@@ -61,7 +62,12 @@ class Config:
             zone,
             mentions,
             12,
+            os.getenv("DOBBY_DATA_DIR", "data"),
         )
+
+    @property
+    def contacts_file(self):
+        return os.path.join(self.data_dir, "contacts.json")
 
     def mentionable(self, channel):
         """Empty MENTION_CHANNEL_IDS permits any channel, matching ALLOWED_CHANNEL_IDS."""

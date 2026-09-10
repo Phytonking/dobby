@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 secrets/
+data/
 *credentials*.json
 *token*.json
 *.pem

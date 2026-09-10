@@ -84,9 +84,11 @@ class Planner:
                     "For update return only explicitly changed fields; when moving a meeting "
                     "preserve its duration unless asked otherwise. "
                     "Updates/deletes require a selected event. "
+                    "Put people the user wants to invite in invitees exactly as written (names or "
+                    "email addresses); never guess an email address. "
                     "Only single timed meetings are supported: clarify for recurring meetings, "
-                    "all-day events, multiple operations, invitations/attendee changes, "
-                    "availability searches, or conference creation. Never claim execution."
+                    "all-day events, multiple operations, availability searches, or conference "
+                    "creation. Never claim execution."
                 ),
                 response_mime_type="application/json",
                 response_json_schema=Plan.model_json_schema(),

@@ -58,6 +58,43 @@ def test_patch_preserves_unmentioned_fields(existing):
     assert "attendees" not in body
 
 
+def test_invitees_become_attendees_and_updates_merge_existing_guests(existing):
+    start, end = times()
+    body = event_body(Plan(action="create", summary="Sync", start=start, end=end), None, "UTC", ["a@x.com"])
+    assert body["attendees"] == [{"email": "a@x.com"}]
+    body = event_body(Plan(action="update"), existing, "UTC", ["Team@example.com", "b@x.com", "b@x.com"])
+    assert body["attendees"] == [{"email": "team@example.com"}, {"email": "b@x.com"}]
+    with pytest.raises(UserError, match="No changes"):
+        event_body(Plan(action="update"), existing, "UTC", ["team@example.com"])
+
+
+def test_unknown_invitee_names_raise_need_contacts_and_known_ones_resolve():
+    from bot.contacts import Contacts
+    from bot.service import NeedContacts
+
+    class Memory(Contacts):
+        def __init__(self, known):
+            super().__init__("unused.json")
+            self.known = known
+
+        def _read(self):
+            return {k: {"email": v, "display": k} for k, v in self.known.items()}
+
+    planner, calendar = Mock(), Mock()
+    start, end = times()
+    planner.plan.return_value = Plan(
+        action="create", summary="Sync", start=start, end=end, invitees=["Maya", "leo@y.org", "Bob"]
+    )
+    scheduler = Scheduler(planner, calendar, "UTC", Memory({"maya": "maya@x.com"}))
+    with pytest.raises(NeedContacts) as caught:
+        scheduler.prepare("invite them", None, 1)
+    assert caught.value.names == ["Bob"]
+    planner.plan.return_value.invitees = ["Maya", "leo@y.org"]
+    proposal = scheduler.prepare("invite them", None, 1)
+    assert proposal.attendees == ("maya@x.com", "leo@y.org")
+    assert proposal.body["attendees"] == [{"email": "maya@x.com"}, {"email": "leo@y.org"}]
+
+
 def test_create_defaults_to_one_hour():
     start, _ = times()
     body = event_body(Plan(action="create", summary="Sync", start=start), None, "UTC")

@@ -16,9 +16,13 @@ services:
     stop_grace_period: 30s
     tmpfs:
       - /tmp:size=16m,mode=1777
+    volumes:
+      # Dobby's contact memory (name -> email) lives here and survives rebuilds.
+      - ./data:/data
     environment:
       DOBBY_ENV_FILE: /run/secrets/dobby.env
       GOOGLE_TOKEN_FILE: /run/secrets/google-token.json
+      DOBBY_DATA_DIR: /data
     secrets:
       - source: dobby_env
         target: dobby.env

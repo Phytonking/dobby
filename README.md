@@ -283,11 +283,15 @@ The optional Pi timer checks every five minutes and recreates the container when
 - Dobby never grants calendar sharing or returns Google credentials to users. Restrict who can assign the scheduler role.
 - Rotate leaked credentials immediately. Removing a file does not remove it from Git history. Enable GitHub push protection where available.
 
+## Inviting people
+
+Say `@Dobby set up a design review Friday at 2pm and invite Maya and Leonard`. Dobby looks each name up in its contact memory. For anyone it does not know, it asks in the channel; reply to that question with `Maya: maya@example.com` (or just the address when one name is missing) and Dobby saves it, then continues the original request automatically. You have five minutes to answer. `/contacts action:add name:Maya email:maya@example.com` teaches Dobby ahead of time; `/contacts action:list` shows names with masked addresses; `/contacts action:remove name:Maya` forgets one. Contacts are shared by everyone allowed to use the bot and are stored in `data/contacts.json` (`DOBBY_DATA_DIR`), which Compose mounts from `./data` so it survives rebuilds. Invitees receive Google Calendar invitations when you confirm.
+
 ## Limitations
 
 - One active instance, one Discord server, one configured Google calendar.
 - Single future timed events up to 24 hours; no recurring/all-day event edits.
-- Google Calendar entries, not Discord Scheduled Events. No new invitations, automatic email mapping, Meet creation, or sharing. Existing attendees are preserved.
+- Google Calendar entries, not Discord Scheduled Events. Invitations work by name once Dobby has learned the person's email (see below); existing attendees are preserved and merged. No Meet creation or sharing.
 - Conflicts check the linked calendar only, not individual private availability. Another app can write an overlap between the check and insert.
 - Gemini quotas and data terms still apply. Docker does not make paid API usage free.
 - Continuous outbound internet is needed. No router port forwarding is required.
