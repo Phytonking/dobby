@@ -1,0 +1,13 @@
+.git
+.github
+.env*
+secrets
+.venv
+**/__pycache__
+tests
+*credentials*.json
+*token*.json
+*.pem
+*.key
+gha-creds-*.json
+.ruff_cache

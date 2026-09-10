@@ -1,0 +1,87 @@
+name: Deploy to Cloud Run
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: calendar-production
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install -r requirements.txt
+      - run: python scripts/check_secrets.py
+      - run: ruff check bot scripts tests
+      - run: ruff format --check bot scripts tests
+      - run: python -m pytest -q
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      POOL: ${{ vars.GCP_WORKER_POOL }}
+      RUNTIME_SA: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+      DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
+      ALLOWED_USER_IDS: ${{ vars.ALLOWED_USER_IDS }}
+      ALLOWED_ROLE_IDS: ${{ vars.ALLOWED_ROLE_IDS }}
+      ALLOWED_CHANNEL_IDS: ${{ vars.ALLOWED_CHANNEL_IDS }}
+      MENTION_CHANNEL_IDS: ${{ vars.MENTION_CHANNEL_IDS }}
+      GOOGLE_CALENDAR_ID: ${{ vars.GOOGLE_CALENDAR_ID }}
+      TEAM_TIMEZONE: ${{ vars.TEAM_TIMEZONE }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate configuration and build before cloud authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in PROJECT_ID REGION REPOSITORY POOL RUNTIME_SA DISCORD_GUILD_ID; do
+            test -n "${!name}" || { echo "Missing variable: $name"; exit 1; }
+          done
+          test -n "${ALLOWED_USER_IDS}${ALLOWED_ROLE_IDS}" || { echo 'An access allowlist is required'; exit 1; }
+          docker build -t calendar-bot:deploy .
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Push immutable image and deploy one worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/calendar-bot:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker tag calendar-bot:deploy "$image"
+          docker push "$image"
+          python - <<'PY'
+          import json, os
+          values = {k: os.environ.get(k, '') for k in (
+              'DISCORD_GUILD_ID', 'ALLOWED_USER_IDS', 'ALLOWED_ROLE_IDS',
+              'ALLOWED_CHANNEL_IDS', 'MENTION_CHANNEL_IDS')}
+          values.update(GOOGLE_CALENDAR_ID=os.environ.get('GOOGLE_CALENDAR_ID') or 'primary',
+                        TEAM_TIMEZONE=os.environ.get('TEAM_TIMEZONE') or 'America/Denver',
+                        GEMINI_MODEL=os.environ.get('GEMINI_MODEL') or 'gemini-2.5-flash-lite',
+                        GOOGLE_TOKEN_FILE='/secrets/google-token.json')
+          with open('/tmp/calendar-env.json', 'w') as stream:
+              json.dump(values, stream)
+          PY
+          gcloud run worker-pools deploy "$POOL" \
+            --project "$PROJECT_ID" --region "$REGION" --image "$image" \
+            --service-account "$RUNTIME_SA" --instances 1 --cpu 1 --memory 512Mi \
+            --env-vars-file /tmp/calendar-env.json \
+            --set-secrets 'DISCORD_TOKEN=discord-token:latest,GEMINI_API_KEY=gemini-api-key:latest,/secrets/google-token.json=google-calendar-token:latest' \
+            --quiet

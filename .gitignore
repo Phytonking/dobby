@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+secrets/
+*credentials*.json
+*token*.json
+*.pem
+*.key
+.venv/
+__pycache__/
+.pytest_cache/
+*.log
+.coverage
+gha-creds-*.json
+.ruff_cache/
