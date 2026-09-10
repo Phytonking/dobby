@@ -49,7 +49,7 @@ flowchart TD
 
 ## Request lifecycle
 
-1. Reject other servers, unauthorized users/roles and channels before calling Google/Gemini. No administrator bypass. Mention context also requires current membership and View Channel/Read Message History in a configured ordinary text channel.
+1. Reject other servers, unauthorized users/roles and channels before calling Google/Gemini. No administrator bypass. Mention context also requires current membership and View Channel/Read Message History in an ordinary text channel. `MENTION_CHANNEL_IDS` narrows mentions to named channels; empty permits any visible channel, mirroring `ALLOWED_CHANNEL_IDS`, so the message content intent is always requested and the user/role allowlist remains the access boundary.
 2. Defer slash responses privately. For mentions, open a DM before fetching context. Blocked DMs never cause a public calendar preview.
 3. Context language triggers at most six preceding same-channel messages, excluding bots and limiting each text to 1,500 characters. No attachments, linked pages, other channels or archives. Discord's message cache is disabled.
 4. Updates/deletes fetch the user-supplied exact event ID from the fixed calendar. Gemini cannot choose another calendar or arbitrary event ID.

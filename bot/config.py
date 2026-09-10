@@ -63,6 +63,10 @@ class Config:
             6,
         )
 
+    def mentionable(self, channel):
+        """Empty MENTION_CHANNEL_IDS permits any channel, matching ALLOWED_CHANNEL_IDS."""
+        return not self.mention_channels or channel in self.mention_channels
+
     def allows(self, guild, user, roles, channel):
         return (
             guild == self.guild

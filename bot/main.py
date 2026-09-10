@@ -133,9 +133,11 @@ class Bot(discord.Client):
     def __init__(self, config):
         intents = discord.Intents.none()
         intents.guilds = True
-        intents.guild_messages = bool(config.mention_channels)
-        intents.dm_messages = bool(config.mention_channels)
-        intents.message_content = bool(config.mention_channels)
+        # Mentions work in every visible channel unless MENTION_CHANNEL_IDS narrows them,
+        # so message content is always required. Enable the intent in the developer portal.
+        intents.guild_messages = True
+        intents.dm_messages = True
+        intents.message_content = True
         super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none(), max_messages=None)
         self.config = config
         self.tree = app_commands.CommandTree(self)
@@ -180,7 +182,7 @@ class Bot(discord.Client):
 
     async def member_allowed(self, user_id, channel_id):
         # A DM button has no guild member payload: fetch current roles before any write.
-        if channel_id not in self.config.mention_channels:
+        if not self.config.mentionable(channel_id):
             return False
         guild = self.get_guild(self.config.guild)
         if guild is None:
@@ -202,7 +204,7 @@ class Bot(discord.Client):
             message.author.bot
             or not message.guild
             or message.guild.id != self.config.guild
-            or message.channel.id not in self.config.mention_channels
+            or not self.config.mentionable(message.channel.id)
             or self.user not in message.mentions
         ):
             return

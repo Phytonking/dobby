@@ -1,14 +1,17 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
+from bot.config import Config
 from bot.main import Bot
 from bot.service import Proposal
 
 
-def setup():
+def setup(mention_channels=frozenset({40})):
     bot = Mock()
     bot.config.guild = 10
-    bot.config.mention_channels = {40}
+    bot.config.mention_channels = mention_channels
+    # Bind the real predicate so the tests exercise the shipped gating rule.
+    bot.config.mentionable = Config.mentionable.__get__(bot.config)
     bot.config.context_limit = 6
     bot.user.id = 5
     bot.member_allowed = AsyncMock(return_value=True)
@@ -97,5 +100,38 @@ def test_non_allowlisted_channel_and_non_mention_are_ignored():
         message.mentions = []
         await Bot.on_message(bot, message)
         bot.work.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_empty_mention_channels_allows_every_channel():
+    """Empty MENTION_CHANNEL_IDS means any channel, like an empty ALLOWED_CHANNEL_IDS."""
+
+    async def run():
+        for channel_id in (40, 41, 999):
+            bot, message = setup(mention_channels=frozenset())
+            message.channel.id = channel_id
+            message.content = "<@5> schedule Planning tomorrow at 10am"
+            await Bot.on_message(bot, message)
+            # Checked once to admit the mention, once again before the private reply.
+            assert bot.member_allowed.await_args_list == [call(1, channel_id)] * 2
+            bot.work.assert_awaited_once()
+            message.author.send.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_empty_mention_channels_still_enforces_membership_and_guild():
+    async def run():
+        bot, message = setup(mention_channels=frozenset())
+        bot.member_allowed.return_value = False
+        await Bot.on_message(bot, message)
+        bot.work.assert_not_awaited()
+        message.author.send.assert_not_awaited()
+
+        bot, message = setup(mention_channels=frozenset())
+        message.guild.id = 11
+        await Bot.on_message(bot, message)
+        bot.member_allowed.assert_not_awaited()
 
     asyncio.run(run())

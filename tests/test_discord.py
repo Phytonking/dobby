@@ -79,7 +79,9 @@ def test_real_discord_command_registration_without_network():
         with patch("bot.main.Calendar"), patch("bot.main.Planner"):
             bot = Bot(config)
             assert {c.name for c in bot.tree.get_commands()} == {"schedule", "events", "calendar_help"}
-            assert not bot.intents.message_content
+            # Mentions are permitted in any channel when MENTION_CHANNEL_IDS is empty,
+            # so the content intent is required regardless of that setting.
+            assert bot.intents.message_content
             await bot.close()
 
     asyncio.run(run())

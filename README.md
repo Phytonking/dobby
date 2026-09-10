@@ -88,7 +88,7 @@ On Pi/Linux, edit `.env` and set `DOBBY_UID` and `DOBBY_GID` to the two IDs that
 
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application named **Dobby**. Set the bot username or server nickname to **Dobby**.
 2. Obtain its bot token and put it in local `.env` as `DISCORD_TOKEN`.
-3. Enable **Message Content Intent** for mention/context requests. No Presence or Server Members privileged intent is needed. Leave Interactions Endpoint URL empty.
+3. Enable **Message Content Intent** — it is required for mention and context requests. No Presence or Server Members privileged intent is needed. Leave Interactions Endpoint URL empty.
 4. Invite with `bot` and `applications.commands` OAuth scopes. Grant **View Channels**, **Send Messages**, **Read Message History**, and **Attach Files** in scheduling channels. Do not grant Administrator or Manage Roles.
 5. Enable Discord Developer Mode and copy the server, scheduler role, and scheduling text channel IDs into `.env`:
 
@@ -103,7 +103,7 @@ TEAM_TIMEZONE=America/Denver
 
 Replace placeholders with numeric IDs. Lists accept comma-separated IDs. `ALLOWED_USER_IDS` optionally grants access to specific users instead of requiring a role. At least one user or role must be allowed; there is no administrator bypass.
 
-Empty `MENTION_CHANNEL_IDS` disables mentions and the Message Content intent. Mention channels must also satisfy `ALLOWED_CHANNEL_IDS` when set. Use ordinary text channels; thread context is not supported. Tell members that context requests send recent text to Gemini.
+Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Use ordinary text channels; thread context is not supported. Tell members that context requests send recent text to Gemini.
 
 ### Step 3: Get a Gemini API key
 
@@ -182,7 +182,7 @@ Run **one instance per Discord token**. Stop Windows Dobby with `docker compose 
 
 ### Before your first request
 
-Ask for the scheduler role, use an enabled scheduling channel, and allow DMs from that server. Type `@Dobby` and **select the bot from Discord's mention suggestions**. Plain text resembling a mention will not trigger it.
+Ask for the scheduler role, use a channel Dobby is allowed in, and allow DMs from that server. Type `@Dobby` and **select the bot from Discord's mention suggestions**. Plain text resembling a mention will not trigger it.
 
 ### Create a meeting
 
@@ -303,7 +303,7 @@ The optional Pi timer checks every five minutes and recreates the container when
 | Repeated restarts | Run `docker compose down`, then step 5's `--check`; it names the setting to fix |
 | `.env` or token is a directory | Docker created it because the file was missing; delete it, redo steps 1 and 4 |
 | Bot starts but commands missing | Confirm `DISCORD_GUILD_ID`; commands sync to that one server on `bot_ready` |
-| Gateway 4014 | Enable Message Content Intent or clear `MENTION_CHANNEL_IDS` |
+| Gateway 4014 | Enable Message Content Intent in the developer portal; it is always required |
 | Mention ignored | Actual mention, allowed role, correct text channel/server, ten-second cooldown |
 | DM preview unavailable | Enable DMs or use `/schedule` |
 | Context inaccessible | Bot and requester need View Channel and Read Message History |
