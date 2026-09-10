@@ -193,7 +193,6 @@ class Bot(discord.Client):
             return (
                 channel is not None
                 and channel.permissions_for(member).view_channel
-                and channel.permissions_for(member).read_message_history
                 and self.config.allows(guild.id, member.id, [r.id for r in member.roles], channel_id)
             )
         except discord.HTTPException:
@@ -209,12 +208,20 @@ class Bot(discord.Client):
         ):
             return
         if not await self.member_allowed(message.author.id, message.channel.id):
+            await self.mention_reply(
+                message,
+                "Dobby cannot use this calendar here. Check your allowed role or user and channel settings.",
+            )
             return
         if not self.take_cooldown(message.author.id):
+            await self.mention_reply(
+                message, "One moment, if you please! Dobby needs 10 seconds between requests."
+            )
             return
         dm = None
         try:
             dm = await message.author.send("Dobby is on it! Dobby will prepare a meeting preview for you…")
+            await self.mention_reply(message, "Dobby sent you a DM! Please check there for your reply.")
             request = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
             if not request or len(request) > 2000:
                 raise UserError("Mention me with a meeting request under 2,000 characters.")
@@ -224,6 +231,8 @@ class Bot(discord.Client):
             )
             history = []
             if use_context:
+                if not message.channel.permissions_for(message.author).read_message_history:
+                    raise UserError("You need Read Message History permission to use channel context.")
                 async for prior in message.channel.history(limit=self.config.context_limit, before=message):
                     if not prior.author.bot and prior.content:
                         history.append({"text": prior.content[:1500], "at": prior.created_at.isoformat()})
@@ -254,11 +263,23 @@ class Bot(discord.Client):
             except discord.HTTPException:
                 pass
         except Exception as exc:
+            text = self.error(exc)
             if dm:
                 try:
-                    await dm.edit(content=self.error(exc), view=None)
+                    await dm.edit(content=text, view=None)
                 except discord.HTTPException:
                     pass
+            else:
+                await self.mention_reply(
+                    message, "Dobby could not send you a DM. Please use /schedule for a private reply."
+                )
+
+    async def mention_reply(self, message, text):
+        # Shared-channel feedback must never contain calendar details or request text.
+        try:
+            await message.reply(text, mention_author=False)
+        except discord.HTTPException:
+            pass
 
     async def work(self, function, *args):
         if self.pending >= 4:

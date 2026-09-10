@@ -41,7 +41,7 @@ class Planner:
                     "availability searches, or conference creation. Never claim execution."
                 ),
                 response_mime_type="application/json",
-                response_schema=Plan,
+                response_json_schema=Plan.model_json_schema(),
                 temperature=0,
                 max_output_tokens=2000,
             ),

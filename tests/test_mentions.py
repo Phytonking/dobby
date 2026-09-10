@@ -15,6 +15,7 @@ def setup(mention_channels=frozenset({40})):
     bot.config.context_limit = 6
     bot.user.id = 5
     bot.member_allowed = AsyncMock(return_value=True)
+    bot.mention_reply = Bot.mention_reply.__get__(bot)
     bot.take_cooldown.return_value = True
     bot.work = AsyncMock(
         return_value=Proposal(
@@ -74,7 +75,7 @@ def test_context_is_bounded_same_channel_and_excludes_bots():
         args = bot.work.call_args.args
         assert [row["text"] for row in args[-1]] == ["earlier", "latest"]
         message.author.send.return_value.edit.assert_awaited_once()
-        message.reply.assert_not_awaited()
+        message.reply.assert_awaited_once()
 
     asyncio.run(run())
 
@@ -86,6 +87,59 @@ def test_complete_mention_does_not_fetch_history():
         await Bot.on_message(bot, message)
         message.channel.history.assert_not_called()
         assert bot.work.call_args.args[-1] == []
+
+    asyncio.run(run())
+
+
+def test_bare_mention_replies_without_calling_ai():
+    async def run():
+        bot, message = setup()
+        message.content = "<@!5>"
+        bot.error = Bot.error
+        await Bot.on_message(bot, message)
+        bot.work.assert_not_awaited()
+        assert "meeting request" in message.author.send.return_value.edit.call_args.kwargs["content"]
+        message.reply.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_cooldown_gets_visible_feedback():
+    async def run():
+        bot, message = setup()
+        bot.take_cooldown.return_value = False
+        await Bot.on_message(bot, message)
+        message.reply.assert_awaited_once()
+        bot.work.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_context_requires_requester_history_permission():
+    async def run():
+        bot, message = setup()
+        bot.error = Bot.error
+        message.channel.permissions_for.return_value.read_message_history = False
+        await Bot.on_message(bot, message)
+        message.channel.history.assert_not_called()
+        bot.work.assert_not_awaited()
+        assert "Read Message History" in message.author.send.return_value.edit.call_args.kwargs["content"]
+
+    asyncio.run(run())
+
+
+def test_member_without_history_permission_can_schedule():
+    async def run():
+        bot, _ = setup()
+        guild = bot.get_guild.return_value
+        guild.id = 10
+        member = Mock(id=1, roles=[])
+        guild.fetch_member = AsyncMock(return_value=member)
+        permissions = guild.get_channel.return_value.permissions_for.return_value
+        permissions.view_channel = True
+        permissions.read_message_history = False
+        bot.config.allows.return_value = True
+        assert await Bot.member_allowed(bot, 1, 40)
 
     asyncio.run(run())
 
