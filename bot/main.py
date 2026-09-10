@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord import app_commands
 from .calendar import Calendar
+from . import format as fmt
 from .config import Config
 from .contacts import Contacts, mask, parse_pairs, valid_email
 from .models import ConfigError, UserError, event_label
@@ -41,38 +42,47 @@ def describe_place(channel):
     return {"channel": name, "thread": None}
 
 
-def preview(proposal):
+def preview(proposal, zone, note=None):
+    """Structured, bold-labelled preview. `note` is a trailing italic line (context used)."""
     old = proposal.existing or {}
     merged = {**old, **proposal.body}
-    lines = [
-        say("preview_intro"),
-        f"**{proposal.action.title()} meeting**",
-    ]
+    head = [say("preview_intro"), "", f"**{proposal.action.title()} meeting**"]
     if proposal.resolved_by_title:
         # Found by title rather than ID: the 🟢/🔴 step doubles as "is this the right one?"
-        lines.append(
-            say(
+        head.append(
+            "_"
+            + say(
                 "confirm_event_match",
-                title=safe(old.get("summary", "(untitled)")),
-                start=safe(old.get("start", {}).get("dateTime", "")),
+                title=plain_title(old.get("summary", "(untitled)")),
+                start=safe(fmt.when(old.get("start", {}).get("dateTime"), None, zone)),
             )
+            + "_"
         )
-    lines += [
-        f"Title: {plain_title(merged.get('summary', '(untitled)'))}",
-        f"Start: {safe(merged.get('start', {}).get('dateTime', ''))}",
-        f"End: {safe(merged.get('end', {}).get('dateTime', ''))}",
+    rows = [
+        ("Title", plain_title(merged.get("summary", "(untitled)"))),
+        (
+            "When",
+            safe(
+                fmt.when(merged.get("start", {}).get("dateTime"), merged.get("end", {}).get("dateTime"), zone)
+            ),
+        ),
     ]
-    for key in ("description", "location"):
-        if key in proposal.body:
-            lines.append(f"{key.title()}: {safe(proposal.body[key])}")
+    for key in ("location", "description"):
+        if merged.get(key):
+            rows.append((key.title(), safe(merged[key])))
     if proposal.attendees:
-        lines.append("Invitees: " + ", ".join(safe(a) for a in proposal.attendees))
+        rows.append(("Invitees", ", ".join(safe(a) for a in proposal.attendees)))
+    body = [f"**{label}:** {value}" for label, value in rows]
     if proposal.action == "update":
-        lines.append("Changed fields: " + ", ".join(proposal.body))
-    if old.get("attendees"):
-        lines.append(f"Google will notify the {len(old['attendees'])} existing invitees.")
-    lines.append(say("preview_outro"))
-    return "\n".join(lines)
+        diff = fmt.changes(old, proposal.body, zone)
+        body.append("**Changes:**")
+        body += [f"• {plain_title(line)}" for line in diff] or ["• (nothing visible)"]
+    if old.get("attendees") and proposal.action != "create":
+        body.append(f"_Google will notify the {len(old['attendees'])} existing invitees._")
+    tail = ["", say("preview_outro")]
+    if note:
+        tail.append(f"_{note}_")
+    return "\n".join(head + body + tail)
 
 
 CONFIRM, CANCEL = "\U0001f7e2", "\U0001f534"  # green circle, red circle
@@ -351,7 +361,7 @@ class Bot(discord.Client):
             # Recheck access if membership changed during planning.
             if not await self.member_allowed(message.author.id, message.channel.id):
                 raise UserError("Your calendar access is no longer authorized.")
-            content = preview(proposal) + "\n" + say("context_used", count=len(history))
+            content = preview(proposal, self.config.timezone, say("context_used", count=len(history)))
             await self.present(reply, content, message.author.id, proposal, mention=True)
         except discord.Forbidden:
             log.warning("mention_reply_forbidden channel=%s", message.channel.id)
@@ -416,7 +426,10 @@ class Bot(discord.Client):
                 )
                 # Name and date instead of the event ID: "<thread or channel> | <event>, <m>/<d>".
                 event = {**(entry.proposal.existing or {}), **entry.proposal.body, **(result or {})}
-                text += "\n" + plain_title(event_label(event, self.config.timezone))
+                text += "\n\n**Event:** " + plain_title(event_label(event, self.config.timezone))
+                if entry.proposal.action == "update":
+                    diff = fmt.changes(entry.proposal.existing, entry.proposal.body, self.config.timezone)
+                    text += "\n**Changed:**\n" + "\n".join(f"• {plain_title(line)}" for line in diff)
                 log.info(
                     "calendar_operation action=%s user=%s guild=%s",
                     entry.proposal.action,
@@ -525,7 +538,13 @@ class Bot(discord.Client):
                     self.scheduler.prepare, request, event_id, interaction.id, None, place
                 )
                 reply = await interaction.original_response()
-                await self.present(reply, preview(proposal), interaction.user.id, proposal, mention=False)
+                await self.present(
+                    reply,
+                    preview(proposal, self.config.timezone),
+                    interaction.user.id,
+                    proposal,
+                    mention=False,
+                )
             except Exception as exc:
                 await interaction.edit_original_response(content=self.error(exc))
 

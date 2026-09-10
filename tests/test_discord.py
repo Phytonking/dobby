@@ -183,6 +183,75 @@ def test_long_previews_continue_in_a_second_message_instead_of_a_file():
     asyncio.run(run())
 
 
+def test_preview_is_structured_with_bold_labels_and_readable_times():
+    from bot.main import preview
+
+    proposal = Proposal(
+        "create",
+        {
+            "summary": "planning | Sync",
+            "start": {"dateTime": "2030-10-12T14:00:00-06:00"},
+            "end": {"dateTime": "2030-10-12T15:00:00-06:00"},
+            "location": "Room 4",
+        },
+        None,
+        None,
+        "op",
+        None,
+        ("maya@example.com",),
+    )
+    text = preview(proposal, "America/Denver", "Used 3 recent text messages.")
+    lines = text.split("\n")
+    assert lines[1] == "" and lines[2] == "**Create meeting**"
+    assert "**Title:** planning | Sync" in lines
+    assert "**When:** Sat Oct 12, 2030 · 2:00 PM – 3:00 PM (UTC-06:00)" in lines
+    assert "**Location:** Room 4" in lines
+    assert "**Invitees:** maya@example.com" in lines
+    assert lines[-1] == "_Used 3 recent text messages._"
+    assert "Changes" not in text
+
+
+def test_update_preview_and_confirmation_list_what_changed():
+    from bot.main import preview
+
+    existing = {
+        "id": "abc",
+        "summary": "planning | Sync",
+        "start": {"dateTime": "2030-10-12T14:00:00-06:00"},
+        "end": {"dateTime": "2030-10-12T15:00:00-06:00"},
+        "attendees": [{"email": "old@example.com"}],
+    }
+    body = {
+        "summary": "planning | Design review",
+        "start": {"dateTime": "2030-10-13T09:00:00-06:00"},
+        "end": {"dateTime": "2030-10-13T10:00:00-06:00"},
+        "attendees": [{"email": "old@example.com"}, {"email": "new@example.com"}],
+    }
+    proposal = Proposal("update", body, "abc", '"v"', "op", existing, ("old@example.com", "new@example.com"))
+    text = preview(proposal, "America/Denver")
+    assert "**Changes:**" in text
+    assert "• Title: planning | Sync → planning | Design review" in text
+    assert (
+        "• When: Sat Oct 12, 2030 · 2:00 PM – 3:00 PM (UTC-06:00) → Sun Oct 13, 2030 · 9:00 AM – 10:00 AM (UTC-06:00)"
+        in text
+    )
+    assert "• Invitees added: new@example.com" in text
+
+    async def run():
+        bot, entry, message = pending_bot()
+        bot.config.timezone = "America/Denver"
+        entry.proposal = proposal
+        bot.work.return_value = {"id": "abc", **body}
+        await bot.on_raw_reaction_add(reaction(CONFIRM))
+        content = message.edit.call_args.kwargs["content"]
+        assert "**Event:** planning | Design review, 10/13" in content
+        assert "**Changed:**" in content
+        assert "• Title: planning | Sync → planning | Design review" in content
+        assert "abc" not in content
+
+    asyncio.run(run())
+
+
 def test_chunks_split_on_line_boundaries():
     parts = chunks("a\n" * 1000 + "b", 1900)
     assert all(len(p) <= 1900 for p in parts)

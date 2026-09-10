@@ -16,6 +16,7 @@ def setup(mention_channels=frozenset({40})):
     # Bind the real predicate so the tests exercise the shipped gating rule.
     bot.config.mentionable = Config.mentionable.__get__(bot.config)
     bot.config.context_limit = 6
+    bot.config.timezone = "UTC"
     bot.user.id = 5
     bot.member_allowed = AsyncMock(return_value=True)
     bot.mention_reply = Bot.mention_reply.__get__(bot)

@@ -43,3 +43,16 @@ def test_clear_winner_requires_a_strong_unambiguous_top_match():
     assert clear_winner([(1.0, event("a", "x")), (0.7, event("b", "y"))]) == event("a", "x")
     assert clear_winner([(1.0, event("a", "x")), (1.0, event("b", "x"))]) is None
     assert clear_winner([(0.7, event("a", "x")), (0.5, event("b", "y"))]) is None
+
+
+def test_format_helpers_handle_missing_and_naive_values():
+    from bot import format as fmt
+
+    assert fmt.when(None, None, "UTC") == ""
+    assert fmt.when("garbage", None, "UTC") == "garbage"
+    assert fmt.when("2030-01-01T10:00:00+00:00", None, "UTC") == "Tue Jan 1, 2030 · 10:00 AM (UTC+00:00)"
+    assert fmt.when("2030-01-01T23:00:00+00:00", "2030-01-02T01:00:00+00:00", "UTC") == (
+        "Tue Jan 1, 2030 11:00 PM → Wed Jan 2, 2030 1:00 AM (UTC+00:00)"
+    )
+    assert fmt.changes({"summary": "A"}, {"summary": "A"}, "UTC") == []
+    assert fmt.changes(None, {"location": "Room"}, "UTC") == ["Location: (none) → Room"]

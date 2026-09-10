@@ -30,6 +30,12 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 - The 🟢 confirmation shows `<title>, <month>/<day>` in the team timezone (`models.event_label`) instead of the event ID. `main.plain_title` keeps the pipe unescaped.
 - Quotes in the user's example were read as placeholder markers, so no literal quote characters are written into titles.
 
+## Follow-up change: structured messages and update diffs
+
+- `bot/format.py`: readable times (`Sat Oct 12, 2030 · 2:00 PM – 3:00 PM (UTC-06:00)`) and `changes(existing, body, zone)` producing `Label: old → new` lines for title, description, location, time span and added invitees.
+- `preview(proposal, zone, note)` now emits bold labels (`**Title:**`, `**When:**`, `**Invitees:**`…), a `**Changes:**` bullet list for updates, and the context note in italics at the end.
+- The 🟢 confirmation shows `**Event:** <title>, <m>/<d>` and, for updates, `**Changed:**` bullets.
+
 ## Deviations and notes
 
 - The first commit also removed `ComprehensiveTest.txt`; it was already deleted in the working tree before work started, and `git add -A` staged it.

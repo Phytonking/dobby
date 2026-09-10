@@ -285,7 +285,7 @@ The optional Pi timer checks every five minutes and recreates the container when
 
 ## Event titles and confirmations
 
-Every event Dobby creates or renames is titled `<thread or channel name> | <event name>`, for example `Q4 launch prep | Design review` when asked from that thread, or `planning | Design review` from the channel itself. Titles that already carry the prefix are not prefixed again. After you confirm with 🟢, Dobby reports the meeting as `<thread or channel name> | <event name>, <month>/<day>` (in the team timezone) rather than showing the event ID; use `/events` when you need the ID itself.
+Every event Dobby creates or renames is titled `<thread or channel name> | <event name>`, for example `Q4 launch prep | Design review` when asked from that thread, or `planning | Design review` from the channel itself. Titles that already carry the prefix are not prefixed again. After you confirm with 🟢, Dobby reports the meeting as `<thread or channel name> | <event name>, <month>/<day>` (in the team timezone) rather than showing the event ID; use `/events` when you need the ID itself. Previews and confirmations use bold labels (Title, When, Location, Invitees), and an update lists every change as `old → new` both in the preview and after you confirm.
 
 ## Deleting or changing a meeting without an ID
 
