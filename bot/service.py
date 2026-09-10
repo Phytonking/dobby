@@ -18,7 +18,7 @@ class Scheduler:
     def __init__(self, planner, calendar, timezone):
         self.planner, self.calendar, self.timezone = planner, calendar, timezone
 
-    def prepare(self, request, event_id, interaction_id, history=None):
+    def prepare(self, request, event_id, interaction_id, history=None, place=None):
         if event_id and not re.fullmatch(r"[a-zA-Z0-9_-]{1,1024}", event_id):
             raise UserError("Copy an event ID from /events.")
         existing = self.calendar.get(event_id) if event_id else None
@@ -30,7 +30,7 @@ class Scheduler:
             or existing.get("status") == "cancelled"
         ):
             raise UserError("Only active, single, timed meetings can be changed in this version.")
-        plan = self.planner.plan(request, existing, history)
+        plan = self.planner.plan(request, existing, history, place)
         if plan.action == "clarify":
             raise UserError(plan.question or "Please include a title, date, time and duration.")
         if plan.action in ("update", "delete") and not existing:

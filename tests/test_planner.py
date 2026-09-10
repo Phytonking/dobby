@@ -18,7 +18,12 @@ def test_standard_json_schema_and_local_validation():
         generate = client.return_value.models.generate_content
         generate.return_value.text = '{"action":"clarify","question":"What time?"}'
         planner = Planner(SimpleNamespace(gemini_key="fake", model="test", timezone="UTC"))
-        assert planner.plan("Schedule a meeting").question == "What time?"
+        history = [{"author": "Ann", "text": "launch review?", "at": "2030-01-01T00:00:00Z"}]
+        place = {"channel": "planning", "thread": "Q4 launch"}
+        assert planner.plan("Schedule a meeting", None, history, place).question == "What time?"
+        sent = json.loads(generate.call_args.kwargs["contents"])
+        assert sent["recent_messages"] == history
+        assert sent["place"] == place
         config = generate.call_args.kwargs["config"]
         assert config.response_schema is None
         assert config.response_json_schema == Plan.model_json_schema()

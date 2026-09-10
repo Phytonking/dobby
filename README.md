@@ -20,7 +20,7 @@ Everything runs on your own machine, so there is nothing to pay for hosting. Tha
 ## Features
 
 - Mention `@Dobby` to create, rename, reschedule, change descriptions/locations, or delete meetings.
-- Say `@Dobby make this a meeting` to use up to six recent channel messages as context.
+- Mention requests always use up to twelve recent channel messages, plus the channel and thread names, so Dobby can propose a title from the discussion instead of asking.
 - New meetings default to **one hour** unless you specify otherwise.
 - Shared previews and results in the requesting channel or thread for mentions and slash commands. Only the requester can confirm or cancel.
 - Server, role/user, and channel restrictions, checked again at confirmation.
@@ -103,7 +103,7 @@ TEAM_TIMEZONE=America/Denver
 
 Replace placeholders with numeric IDs. Lists accept comma-separated IDs. `ALLOWED_USER_IDS` optionally grants access to specific users instead of requiring a role. At least one user or role must be allowed; there is no administrator bypass.
 
-Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Threads and forum posts use their own IDs in these allowlists, not the parent channel ID. Private thread access is rechecked before confirmation. Tell members that context requests send recent text to Gemini.
+Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Threads and forum posts use their own IDs in these allowlists, not the parent channel ID. Private thread access is rechecked before confirmation. Tell members that mention requests send recent channel text, author display names and the channel or thread name to Gemini.
 
 ### Step 3: Get a Gemini API key
 
@@ -201,7 +201,7 @@ Teammate: We need 30 minutes; the agenda is the launch checklist.
 You: @Dobby make this a meeting
 ```
 
-Requests referring to `this`, `that`, `above`, `discussion`, `context`, or `conversation` can use up to six preceding messages from that channel. Bot messages are excluded, with text capped at 1,500 characters each. No attachments, links, other channels, or archives are fetched. Review the extracted details before confirming.
+Every mention request sends up to twelve preceding messages from that channel or thread, with author display names, plus the channel and thread names. Dobby uses them to fill in a missing title before asking you for one. Bot messages are excluded, text is capped at 1,500 characters each, and requesters without Read Message History get no context. No attachments, links, other channels, or archives are fetched. Slash commands send no channel context. Review the extracted details before confirming.
 
 ### Find, modify, or delete a meeting
 

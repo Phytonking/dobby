@@ -22,7 +22,7 @@ class Config:
     calendar: str
     timezone: str
     mention_channels: frozenset[int] = frozenset()
-    context_limit: int = 6
+    context_limit: int = 12
 
     @classmethod
     def load(cls):
@@ -60,7 +60,7 @@ class Config:
             os.getenv("GOOGLE_CALENDAR_ID", "primary"),
             zone,
             mentions,
-            6,
+            12,
         )
 
     def mentionable(self, channel):

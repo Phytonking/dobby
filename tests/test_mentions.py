@@ -19,6 +19,7 @@ def setup(mention_channels=frozenset({40})):
     bot.user.id = 5
     bot.member_allowed = AsyncMock(return_value=True)
     bot.mention_reply = Bot.mention_reply.__get__(bot)
+    bot.gather_history = Bot.gather_history.__get__(bot)
     bot.take_cooldown.return_value = True
     bot.work = AsyncMock(
         return_value=Proposal(
@@ -41,6 +42,13 @@ def setup(mention_channels=frozenset({40})):
     message.reply.return_value.edit = AsyncMock()
     message.guild.id = 10
     message.channel.id = 40
+    message.channel.name = "general"
+
+    async def no_history(**kwargs):
+        return
+        yield
+
+    message.channel.history = Mock(side_effect=no_history)
     message.id = 100
     message.mentions = [bot.user]
     message.content = "<@5> make this a meeting"
@@ -77,20 +85,23 @@ def test_context_is_bounded_same_channel_and_excludes_bots():
         await Bot.on_message(bot, message)
         message.channel.history.assert_called_once_with(limit=6, before=message)
         args = bot.work.call_args.args
-        assert [row["text"] for row in args[-1]] == ["earlier", "latest"]
+        assert [row["text"] for row in args[-2]] == ["earlier", "latest"]
+        assert all("author" in row for row in args[-2])
+        assert args[-1] == {"channel": "general", "thread": None}
         message.reply.return_value.edit.assert_awaited_once()
         message.reply.assert_awaited_once()
 
     asyncio.run(run())
 
 
-def test_complete_mention_does_not_fetch_history():
+def test_complete_mention_still_gathers_context_before_planning():
     async def run():
         bot, message = setup()
         message.content = "<@5> schedule Planning tomorrow at 10am"
         await Bot.on_message(bot, message)
-        message.channel.history.assert_not_called()
-        assert bot.work.call_args.args[-1] == []
+        message.channel.history.assert_called_once_with(limit=6, before=message)
+        assert bot.work.call_args.args[-2] == []
+        assert bot.work.call_args.args[-1]["channel"] == "general"
         message.author.send.assert_not_awaited()
         message.reply.assert_awaited_once()
         assert message.reply.call_args.kwargs["mention_author"] is False
@@ -153,17 +164,24 @@ def test_cooldown_gets_visible_feedback():
     asyncio.run(run())
 
 
-def test_context_requires_requester_history_permission():
+def test_requester_without_history_permission_gets_no_context_but_still_schedules():
     async def run():
         bot, message = setup()
-        bot.error = Bot.error
         message.channel.permissions_for.return_value.read_message_history = False
         await Bot.on_message(bot, message)
         message.channel.history.assert_not_called()
-        bot.work.assert_not_awaited()
-        assert "Read Message History" in message.reply.return_value.edit.call_args.kwargs["content"]
+        bot.work.assert_awaited_once()
+        assert bot.work.call_args.args[-2] == []
 
-    asyncio.run(run())
+
+def test_thread_place_includes_parent_channel_name():
+    from bot.main import describe_place
+
+    thread = Mock(spec=discord.Thread)
+    thread.name = "Q4 launch prep"
+    thread.parent = Mock()
+    thread.parent.name = "planning"
+    assert describe_place(thread) == {"channel": "planning", "thread": "Q4 launch prep"}
 
 
 def test_member_without_history_permission_can_schedule():

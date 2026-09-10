@@ -24,6 +24,15 @@ def safe(text):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(text)))
 
 
+def describe_place(channel):
+    """Channel and thread names give Gemini a topic when the request omits a title."""
+    name = str(getattr(channel, "name", "") or "")[:100]
+    if isinstance(channel, discord.Thread):
+        parent = getattr(channel, "parent", None)
+        return {"channel": str(getattr(parent, "name", "") or "")[:100], "thread": name}
+    return {"channel": name, "thread": None}
+
+
 def preview(proposal):
     old = proposal.existing or {}
     merged = {**old, **proposal.body}
@@ -244,27 +253,18 @@ class Bot(discord.Client):
             request = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
             if not request or len(request) > 2000:
                 raise UserError("Mention me with a meeting request under 2,000 characters.")
-            # History is opt-in per request, bounded, same-channel, text only, and never persisted.
-            use_context = bool(
-                re.search(r"\b(this|that|above|discussion|context|conversation)\b", request, re.I)
-            )
-            history = []
-            if use_context:
-                if not message.channel.permissions_for(message.author).read_message_history:
-                    raise UserError("You need Read Message History permission to use channel context.")
-                async for prior in message.channel.history(limit=self.config.context_limit, before=message):
-                    if not prior.author.bot and prior.content:
-                        history.append({"text": prior.content[:1500], "at": prior.created_at.isoformat()})
-                history.reverse()
+            # Context is gathered before planning so Gemini can infer a title from the
+            # discussion instead of asking. Bounded, same-channel, text only, never persisted.
+            history = await self.gather_history(message)
+            place = describe_place(message.channel)
             selected = re.search(r"\bevent_id:([a-zA-Z0-9_-]+)", request)
             event_id = selected.group(1) if selected else None
-            proposal = await self.work(self.scheduler.prepare, request, event_id, message.id, history)
+            proposal = await self.work(self.scheduler.prepare, request, event_id, message.id, history, place)
             # Recheck access if membership changed during planning.
             if not await self.member_allowed(message.author.id, message.channel.id):
                 raise UserError("Your calendar access is no longer authorized.")
             content = preview(proposal)
-            if use_context:
-                content += f"\nUsed {len(history)} recent text messages from the requesting channel."
+            content += f"\nUsed {len(history)} recent text messages from the requesting channel."
             await reply.edit(
                 content=content
                 if len(content) <= 1900
@@ -294,6 +294,27 @@ class Bot(discord.Client):
                     await self.mention_reply(message, text)
             else:
                 await self.mention_reply(message, text)
+
+    async def gather_history(self, message):
+        """Recent same-channel text with author display names, oldest first.
+
+        Members without Read Message History get no context rather than an error, so a
+        complete request still works for them.
+        """
+        if not message.channel.permissions_for(message.author).read_message_history:
+            return []
+        history = []
+        async for prior in message.channel.history(limit=self.config.context_limit, before=message):
+            if not prior.author.bot and prior.content:
+                history.append(
+                    {
+                        "author": str(getattr(prior.author, "display_name", prior.author))[:100],
+                        "text": prior.content[:1500],
+                        "at": prior.created_at.isoformat(),
+                    }
+                )
+        history.reverse()
+        return history
 
     async def mention_reply(self, message, text):
         # Reply in the originating channel or thread without pinging the requester.
@@ -414,7 +435,7 @@ class Bot(discord.Client):
                     "`/schedule request:Move this meeting to October 13 at 2pm event_id:…`\n"
                     "`/schedule request:Delete this meeting event_id:…`\n"
                     "Default duration: 1 hour. Mention Dobby in an enabled channel to schedule; "
-                    "say “make this a meeting” to use the last 6 messages. Preview appears in this channel or thread. "
+                    "recent channel messages and the thread name help Dobby pick a title. Preview appears in this channel or thread. "
                     "Changes require your confirmation. Existing guests receive Google notifications. "
                     "Only single timed meetings are supported. Conflicts check the linked calendar only. "
                     "Your request and selected event details go to Gemini; free-tier data may improve Google products. "
