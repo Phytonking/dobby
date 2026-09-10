@@ -1,0 +1,20 @@
+Dobby is sorry, but you are not authorized to use this calendar here.
+Dobby cannot use this calendar here. Check your allowed role or user and channel settings.
+Dobby is very sorry, but you are not on the list for this calendar in this channel.
+Dobby must decline. This calendar is not available to you here.
+Oh dear. Dobby is not permitted to schedule for you in this channel.
+Dobby apologizes, but your role or user is not allowed to use this calendar here.
+Dobby cannot help here. Check the allowed users, roles and channels with the bot administrator.
+Dobby is sorry, but this channel or your role is not authorized for calendar requests.
+Dobby regrets that you are not authorized to use the calendar in this channel.
+Dobby is not allowed to take calendar requests from you here. Please ask the administrator.
+Dobby must refuse, sorry! You are not authorized for this calendar in this channel.
+Dobby cannot proceed. Authorization is missing for this user, role or channel.
+Dobby wishes to help but is not permitted to use this calendar for you here.
+Dobby is sorry. This request is not authorized in this channel.
+Dobby's rules do not allow this here. Check your role and the channel allowlist.
+Dobby cannot serve this request. You are not authorized for this calendar here.
+Dobby is unable to help: your user or role is not on the calendar allowlist for this channel.
+Dobby is terribly sorry, but you lack authorization to use the calendar here.
+Dobby is not allowed to schedule for you in this place. Ask the administrator to check settings.
+Dobby cannot accept this. This calendar is not authorized for you in this channel.

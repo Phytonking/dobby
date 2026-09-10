@@ -1,0 +1,20 @@
+Dobby found {count} events in the next {days} days! Full IDs in attachment.
+Dobby counted {count} events in the next {days} days. Full IDs are in the attachment.
+There are {count} events in the next {days} days. Dobby attached the full IDs.
+Dobby sees {count} events over the next {days} days! Full IDs in the attachment.
+{count} events in the next {days} days, if you please. Full IDs are attached.
+Dobby has found {count} upcoming events within {days} days. Full IDs in attachment.
+Dobby looked ahead {days} days and found {count} events. Full IDs are attached.
+In the next {days} days there are {count} events. Dobby attached the full IDs.
+Dobby found {count} events coming up in {days} days! Full IDs in the attachment.
+Dobby gathered {count} events from the next {days} days. Full IDs in attachment.
+Here are {count} events for the next {days} days. Full IDs are in the attachment.
+Dobby spotted {count} events in the coming {days} days. Full IDs attached.
+The calendar holds {count} events in the next {days} days. Full IDs in attachment.
+Dobby lists {count} events for the next {days} days. Full IDs are attached.
+Dobby found {count} events scheduled within {days} days. Full IDs in the attachment.
+Dobby checked {days} days ahead: {count} events. Full IDs are in the attachment.
+Dobby brings you {count} events from the next {days} days! Full IDs attached.
+Dobby discovered {count} events in the next {days} days. Full IDs in attachment.
+Over the next {days} days Dobby found {count} events. Full IDs are attached.
+Dobby presents {count} events for the next {days} days. Full IDs in the attachment.

@@ -1,0 +1,20 @@
+Dobby has cancelled the request. No calendar change made, Dobby promises.
+Request cancelled. The calendar is untouched, Dobby promises.
+Dobby has set the request aside. Nothing was changed on the calendar.
+Very well! Dobby cancelled the request and changed nothing.
+Dobby has stopped. No calendar change was made.
+The request is cancelled. Dobby did not touch the calendar.
+Dobby has abandoned the proposal. The calendar is exactly as it was.
+As you wish! Dobby cancelled the request. No changes were made.
+Dobby has cancelled it. The calendar remains unchanged, Dobby promises.
+Cancelled! Dobby made no calendar change.
+Dobby has let the proposal go. Nothing was written to the calendar.
+The proposal is cancelled and the calendar is untouched.
+Dobby cancelled the request. Dobby promises nothing changed.
+Understood! Dobby has cancelled the request with no changes made.
+Dobby has thrown the proposal away. The calendar is unchanged.
+No change was made. Dobby has cancelled the request.
+Dobby has cancelled the proposal. Ask again anytime, if you please.
+The request is cancelled and Dobby changed nothing at all.
+Dobby stopped as asked. The calendar is exactly as before.
+Dobby cancelled the request. Not a single calendar change was made.

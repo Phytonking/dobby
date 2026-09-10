@@ -1,0 +1,20 @@
+Dobby does not know an email for {names}. Reply here with it, if you please.
+Dobby has never met {names}! Please reply with their email address so Dobby can invite them.
+Who is {names}? Dobby needs an email address. Reply to this message with it, if you please.
+Dobby cannot invite {names} without an email. Please reply here with the address.
+Dobby needs the email for {names}. Reply like `Name: name@example.com`, if you please.
+Dobby does not have {names} in memory. Please reply with their email address.
+Dobby would love to invite {names}, but needs an email. Reply here with it.
+Please tell Dobby the email address for {names}. Dobby will remember it for next time.
+Dobby is missing an email for {names}. Reply to this message with it, if you please.
+Dobby has no email saved for {names}. Please reply with it so Dobby can send the invitation.
+Dobby needs help: what is the email for {names}? Reply here and Dobby will remember.
+Dobby cannot find {names} in his memory. Reply with their email, if you please.
+To invite {names}, Dobby needs an email address. Please reply with it.
+Dobby does not yet know how to reach {names}. Reply here with their email.
+Dobby asks: what is the email address for {names}? Dobby will keep it safe.
+Dobby needs an email for {names} before continuing. Please reply with it here.
+Dobby has not learned the email for {names}. Reply with `Name: email`, if you please.
+Dobby must ask for the email of {names}. Reply to this message and Dobby will remember.
+Dobby is unsure how to invite {names}. Please reply with their email address.
+Dobby needs one thing: an email for {names}. Reply here and Dobby will continue.

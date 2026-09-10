@@ -1,0 +1,20 @@
+Dobby has remembered {name}'s email. Dobby never forgets a friend!
+Dobby saved the email for {name}. Next time Dobby will know!
+{name} is now in Dobby's memory. Thank you!
+Dobby has written down {name}'s email for future invitations.
+Dobby will remember {name} from now on.
+Saved! Dobby knows how to reach {name} now.
+Dobby has stored {name}'s email safely.
+Dobby learned {name}'s email. Dobby is a quick study!
+{name} has been added to Dobby's contacts.
+Dobby remembers {name} now. No need to tell Dobby again.
+Dobby has noted the email for {name}. Splendid!
+Dobby tucked away {name}'s email for next time.
+Dobby knows {name} now and will invite them whenever asked.
+Dobby has kept {name}'s email in his memory file.
+Dobby has recorded {name}'s email. Thank you kindly!
+Dobby will not forget {name}'s email.
+{name} is remembered! Dobby is pleased to know them.
+Dobby saved {name}. Dobby's memory grows!
+Dobby has memorized {name}'s email address.
+Dobby added {name} to the people he knows.

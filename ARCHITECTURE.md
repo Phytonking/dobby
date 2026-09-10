@@ -30,7 +30,8 @@ flowchart TD
 | Path | Responsibility |
 | --- | --- |
 | `bot/config.py` | Load local/mounted dotenv; validate settings and allowlists |
-| `bot/main.py` | Discord lifecycle, mentions/context, commands, Dobby voice, channel confirmations |
+| `bot/main.py` | Discord lifecycle, mentions/context, commands, channel confirmations |
+| `bot/voice.py` | Dobby's voice: `say(key)` reads `bot/responses/<key>.txt` (20 phrasings each) on every call and picks one at random; nothing is cached |
 | `bot/planner.py` | Gemini structured output with context treated as untrusted data |
 | `bot/models.py` | Writable field schema, time validation, duration/default/timezone rules |
 | `bot/service.py` | Prepare without writing; exact event selection and ETags |

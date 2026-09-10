@@ -1,0 +1,20 @@
+Check /events before retrying; a network failure may occur after a write.
+Please check /events before trying again, in case the change already went through.
+Look at /events before retrying; the calendar may already have changed.
+Before retrying, check /events. A network failure can happen after the write succeeded.
+Dobby suggests checking /events first; the write may have completed despite the error.
+Please verify with /events before asking again, in case the change already happened.
+Check /events before you retry. The calendar might already reflect the change.
+Dobby advises a look at /events before retrying, since the write may have gone through.
+Have a look at /events before trying again; a failure after writing is possible.
+Confirm the calendar state with /events before retrying, if you please.
+Run /events first; the change may have been made before the failure.
+Before retrying, please check /events to avoid a duplicate change.
+Dobby recommends /events before another attempt. The write may already exist.
+Check /events, then retry if the change is missing.
+Please review /events before retrying; the network may have failed after the write.
+Look in /events first, just in case the calendar was already updated.
+Dobby asks you to check /events before trying again.
+A failure can follow a successful write, so check /events before retrying.
+Verify with /events before you ask Dobby again.
+Please use /events to check the calendar before retrying this.

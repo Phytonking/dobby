@@ -1,0 +1,20 @@
+One moment, if you please! Dobby needs 10 seconds between requests.
+Dobby is still catching his breath! Please wait 10 seconds between requests.
+Not so fast! Dobby needs 10 seconds before the next request.
+Dobby asks for a 10-second pause between requests, if you please.
+Please give Dobby 10 seconds between requests. Dobby is only one elf!
+Dobby needs a short rest: 10 seconds between requests.
+Patience, if you please! Dobby takes one request every 10 seconds.
+Dobby is still busy with your last request. Try again in 10 seconds.
+Ten seconds, please! Dobby cannot take requests faster than that.
+Dobby must wait 10 seconds between requests. Please try again shortly.
+Slow down just a little! Dobby needs 10 seconds between requests.
+Dobby will be ready again in 10 seconds. Please wait, if you please.
+Dobby's cooldown is 10 seconds. Please try again in a moment.
+One request at a time, please. Dobby needs 10 seconds in between.
+Dobby is honoured by your eagerness, but needs 10 seconds between requests.
+Please wait 10 seconds before asking Dobby again.
+Dobby cannot be rushed! Wait 10 seconds and ask again.
+Dobby needs a 10-second breather between requests.
+Give Dobby 10 seconds and Dobby will gladly help again.
+Dobby just took a request from you. Please wait 10 seconds for the next.

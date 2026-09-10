@@ -16,6 +16,7 @@ from .config import Config
 from .models import ConfigError, UserError
 from .planner import Planner
 from .service import Scheduler
+from .voice import say
 
 log = logging.getLogger("scheduler")
 
@@ -37,7 +38,7 @@ def preview(proposal):
     old = proposal.existing or {}
     merged = {**old, **proposal.body}
     lines = [
-        "Dobby has prepared a meeting proposal! Please check the details, if you please.",
+        say("preview_intro"),
         f"**{proposal.action.title()} meeting**",
         f"Title: {safe(merged.get('summary', '(untitled)'))}",
         f"Start: {safe(merged.get('start', {}).get('dateTime', ''))}",
@@ -50,10 +51,7 @@ def preview(proposal):
         lines.append("Changed fields: " + ", ".join(proposal.body))
     if old.get("attendees"):
         lines.append(f"Google will notify the {len(old['attendees'])} existing invitees.")
-    lines.append(
-        "Dobby will wait for your confirmation before changing anything. Confirm within 2 minutes. "
-        "Times include their UTC offset."
-    )
+    lines.append(say("preview_outro"))
     return "\n".join(lines)
 
 
@@ -82,10 +80,7 @@ class Confirmation(discord.ui.View):
                 if interaction.response.is_done()
                 else interaction.response.send_message
             )
-            await send(
-                "Dobby cannot use this confirmation, sorry! It is not authorized, already used, or expired.",
-                ephemeral=True,
-            )
+            await send(say("confirm_unusable"), ephemeral=True)
             return False
         return True
 
@@ -99,11 +94,7 @@ class Confirmation(discord.ui.View):
             await interaction.response.defer(ephemeral=True)
         try:
             result = await self.bot.work(self.bot.calendar.apply, self.proposal)
-            text = {
-                "create": "Dobby has created the meeting! Happy to help, Dobby is.",
-                "update": "Dobby has updated the meeting! Everything is in its proper place now.",
-                "delete": "Dobby has deleted the meeting, as you asked.",
-            }[self.proposal.action]
+            text = say({"create": "created", "update": "updated", "delete": "deleted"}[self.proposal.action])
             if result.get("id"):
                 text += f" Event ID: `{result['id']}`"
             log.info(
@@ -113,10 +104,7 @@ class Confirmation(discord.ui.View):
                 interaction.guild_id,
             )
         except Exception as exc:
-            text = (
-                self.bot.error(exc)
-                + " Check /events before retrying; a network failure may occur after a write."
-            )
+            text = self.bot.error(exc) + " " + say("apply_failed_suffix")
         await interaction.edit_original_response(content=text, attachments=[], view=None)
         self.stop()
 
@@ -124,17 +112,9 @@ class Confirmation(discord.ui.View):
     async def cancel(self, interaction, button):
         self.used = True
         if interaction.response.is_done():
-            await interaction.edit_original_response(
-                content="Dobby has cancelled the request. No calendar change made, Dobby promises.",
-                attachments=[],
-                view=None,
-            )
+            await interaction.edit_original_response(content=say("cancelled"), attachments=[], view=None)
         else:
-            await interaction.response.edit_message(
-                content="Dobby has cancelled the request. No calendar change made, Dobby promises.",
-                attachments=[],
-                view=None,
-            )
+            await interaction.response.edit_message(content=say("cancelled"), attachments=[], view=None)
         self.stop()
 
 
@@ -168,14 +148,10 @@ class Bot(discord.Client):
 
     async def gate(self, interaction):
         if not self.allowed(interaction):
-            await interaction.response.send_message(
-                "Dobby is sorry, but you are not authorized to use this calendar here.", ephemeral=True
-            )
+            await interaction.response.send_message(say("not_authorized"), ephemeral=True)
             return False
         if not self.take_cooldown(interaction.user.id):
-            await interaction.response.send_message(
-                "One moment, if you please! Dobby needs 10 seconds between commands.", ephemeral=True
-            )
+            await interaction.response.send_message(say("cooldown"), ephemeral=True)
             return False
         await interaction.response.defer(thinking=True)
         return True
@@ -235,21 +211,14 @@ class Bot(discord.Client):
         ):
             return
         if not await self.member_allowed(message.author.id, message.channel.id):
-            await self.mention_reply(
-                message,
-                "Dobby cannot use this calendar here. Check your allowed role or user and channel settings.",
-            )
+            await self.mention_reply(message, say("not_authorized"))
             return
         if not self.take_cooldown(message.author.id):
-            await self.mention_reply(
-                message, "One moment, if you please! Dobby needs 10 seconds between requests."
-            )
+            await self.mention_reply(message, say("cooldown"))
             return
         reply = None
         try:
-            reply = await message.reply(
-                "Dobby is on it! Dobby will prepare a meeting preview here…", mention_author=False
-            )
+            reply = await message.reply(say("working"), mention_author=False)
             request = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
             if not request or len(request) > 2000:
                 raise UserError("Mention me with a meeting request under 2,000 characters.")
@@ -264,7 +233,7 @@ class Bot(discord.Client):
             if not await self.member_allowed(message.author.id, message.channel.id):
                 raise UserError("Your calendar access is no longer authorized.")
             content = preview(proposal)
-            content += f"\nUsed {len(history)} recent text messages from the requesting channel."
+            content += "\n" + say("context_used", count=len(history))
             await reply.edit(
                 content=content
                 if len(content) <= 1900
@@ -274,10 +243,7 @@ class Bot(discord.Client):
             )
         except discord.Forbidden:
             log.warning("mention_reply_forbidden channel=%s", message.channel.id)
-            text = (
-                "Dobby needs permission to send messages, send messages in threads, attach files, "
-                "and read history when using context in this channel."
-            )
+            text = say("permission_missing")
             if reply:
                 try:
                     await reply.edit(content=text, attachments=[], view=None)
@@ -325,7 +291,7 @@ class Bot(discord.Client):
 
     async def work(self, function, *args):
         if self.pending >= 4:
-            raise UserError("The bot is busy. Please try again shortly.")
+            raise UserError(say("busy"))
         self.pending += 1
         try:
             return await asyncio.get_running_loop().run_in_executor(self.executor, function, *args)
@@ -337,11 +303,8 @@ class Bot(discord.Client):
         # Never log exception bodies: SDK errors can contain prompts, URLs or credentials.
         log.warning("request_failed type=%s", type(exc).__name__)
         if isinstance(exc, UserError):
-            return "Dobby needs your help with this, if you please. " + safe(str(exc))[:1500]
-        return (
-            "Oh dear, Dobby could not complete the request. "
-            "Check API quota, credentials and connectivity, then try again."
-        )
+            return say("needs_help", question=safe(str(exc))[:1500])
+        return say("generic_failure")
 
     def register_commands(self):
         @self.tree.error
@@ -405,12 +368,9 @@ class Bot(discord.Client):
                 ]
                 lines = [f"{safe(e['title'])[:90]} | {safe(e['start'])} | ID: `{e['id']}`" for e in rows[:8]]
                 content = (
-                    (
-                        f"Dobby found {len(rows)} events in the next {days} days! Full IDs in attachment.\n"
-                        + "\n".join(lines)
-                    )
+                    say("events_found", count=len(rows), days=days) + "\n" + "\n".join(lines)
                     if rows
-                    else "Dobby found no upcoming events. A little breathing room for everyone!"
+                    else say("events_none")
                 )
                 files = (
                     [discord.File(io.BytesIO(json.dumps(rows, indent=2).encode()), filename="events.json")]
@@ -428,7 +388,7 @@ class Bot(discord.Client):
                 return
             await interaction.edit_original_response(
                 content=(
-                    "Dobby is happy to help with your meetings! Here is how to ask, if you please.\n\n"
+                    say("help_intro") + "\n\n"
                     f"Team timezone: {self.config.timezone}\n"
                     "`/schedule request:Create Project Sync on October 12, 2026 at 10am for 30 minutes`\n"
                     "`/events days:30` → copy an event ID\n"

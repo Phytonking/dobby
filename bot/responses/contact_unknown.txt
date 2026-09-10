@@ -1,0 +1,20 @@
+Dobby has no saved email for {name}.
+Dobby does not know {name}.
+{name} is not in Dobby's memory.
+Dobby has never learned an email for {name}.
+Dobby cannot find {name} among his contacts.
+Dobby searched but {name} is not saved.
+Dobby has nothing saved for {name}.
+{name} is unknown to Dobby.
+Dobby does not have {name} on file.
+Dobby has not met {name} yet.
+There is no entry for {name} in Dobby's memory.
+Dobby knows no email for {name}.
+Dobby could not find {name} in his contacts.
+{name} is not someone Dobby has saved.
+Dobby has no record of {name}.
+Dobby does not remember anyone called {name}.
+Dobby has no contact named {name}.
+Dobby cannot find any email for {name}.
+Dobby's memory has no {name} in it.
+Dobby has not saved {name}.

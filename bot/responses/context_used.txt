@@ -1,0 +1,20 @@
+Used {count} recent text messages from the requesting channel.
+Dobby read {count} recent messages here to fill in the details.
+Dobby looked at {count} recent messages in this channel for context.
+{count} recent messages from this channel helped Dobby with the details.
+Dobby consulted {count} recent messages here before drafting this.
+Dobby peeked at {count} recent messages in this channel, if you please.
+The last {count} text messages in this channel informed this preview.
+Dobby used {count} recent channel messages to understand the request.
+Dobby took {count} recent messages from this channel into account.
+Context came from {count} recent messages in the requesting channel.
+Dobby read {count} earlier messages here so nothing was missed.
+Dobby drew on {count} recent messages from this channel.
+This preview was informed by {count} recent messages in this channel.
+Dobby gathered {count} recent messages here to help pick the details.
+{count} recent messages in this channel were sent along for context.
+Dobby considered {count} recent messages from this channel.
+Dobby checked {count} recent messages here before planning.
+Dobby's draft used {count} recent messages from this very channel.
+To understand the request, Dobby read {count} recent messages here.
+Dobby borrowed context from {count} recent messages in this channel.

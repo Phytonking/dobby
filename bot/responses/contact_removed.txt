@@ -1,0 +1,20 @@
+Dobby has forgotten {name}'s email, as you asked.
+Dobby removed {name} from his memory.
+{name} is no longer in Dobby's contacts.
+Dobby has erased the email for {name}.
+Dobby will no longer remember {name}.
+Done! Dobby forgot {name}.
+Dobby has struck {name} from the contact list.
+Dobby has removed the saved email for {name}.
+{name} has been forgotten, as requested.
+Dobby cleared {name} from memory.
+Dobby has deleted {name}'s contact entry.
+Dobby no longer knows how to reach {name}.
+Dobby removed {name}. Dobby can learn them again anytime.
+Dobby has let go of {name}'s email.
+Dobby forgot {name}, just as you wished.
+{name} is gone from Dobby's memory file.
+Dobby has taken {name} off the list.
+Dobby wiped the email for {name}.
+Dobby removed {name}'s email from his contacts.
+Dobby has forgotten {name}. Nothing else changed.

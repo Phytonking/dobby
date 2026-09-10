@@ -1,0 +1,20 @@
+Dobby found “{title}” starting {start}. Is this the right meeting?
+Dobby thinks you mean “{title}” at {start}. Is Dobby correct?
+Dobby matched your request to “{title}” on {start}. Is that the one?
+Is “{title}” starting {start} the meeting you mean? Dobby wants to be sure.
+Dobby believes this is “{title}” at {start}. Please confirm it is right.
+Dobby found a likely match: “{title}”, {start}. Is this it?
+Dobby picked “{title}” starting {start}. Say if Dobby chose wrongly!
+Dobby's best guess is “{title}” at {start}. Is that correct?
+“{title}” at {start} looks like the meeting. Does Dobby have it right?
+Dobby matched “{title}” starting {start}. Please check before confirming.
+Dobby found “{title}” on {start}. Is this the meeting you want?
+Dobby thinks it is “{title}” at {start}. Please make sure!
+Dobby chose “{title}” starting {start} from the calendar. Correct?
+Is this it? “{title}” at {start}. Dobby awaits your word.
+Dobby located “{title}” starting {start}. Is that the right one?
+Dobby's search found “{title}” at {start}. Please confirm the match.
+The closest match is “{title}” starting {start}. Is Dobby right?
+Dobby believes you mean “{title}” at {start}. Check it, if you please.
+Dobby found “{title}” for {start}. Is this the meeting in question?
+Dobby matched the title to “{title}” at {start}. Is that correct?

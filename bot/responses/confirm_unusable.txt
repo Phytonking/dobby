@@ -1,0 +1,20 @@
+Dobby cannot use this confirmation, sorry! It is not authorized, already used, or expired.
+Sorry! This confirmation is not yours, already used, or expired, so Dobby cannot act on it.
+Dobby cannot accept this. Only the requester may confirm, and only once within 2 minutes.
+This confirmation is no good to Dobby: it is unauthorized, used, or expired.
+Dobby must ignore this. The confirmation belongs to someone else, was already used, or has expired.
+Dobby is sorry, but this confirmation cannot be used. Check who requested it and whether it expired.
+Dobby cannot act on this confirmation; it is not authorized, already used, or too old.
+Oh dear. This confirmation is not valid for Dobby: wrong person, already used, or expired.
+Dobby will not use this confirmation. It is unauthorized, spent, or expired.
+Dobby cannot proceed on this confirmation. It may belong to another requester or have expired.
+This confirmation does not work for Dobby: not authorized, already used, or past its 2 minutes.
+Dobby cannot honour this confirmation, sorry! It is not yours, already used, or expired.
+Dobby is unable to use this confirmation. Only the requester may confirm, within 2 minutes, once.
+Dobby declines this confirmation: unauthorized, already used, or expired.
+Sorry, Dobby cannot take this confirmation. It is not valid anymore or not yours to give.
+This confirmation cannot be used. Dobby needs the original requester within 2 minutes.
+Dobby cannot act here. The confirmation is unauthorized, already used, or has expired.
+Dobby is sorry, this confirmation is not usable: it is expired, used, or not authorized.
+Dobby cannot follow this confirmation. It was used already, expired, or is not yours.
+Dobby must refuse this confirmation, sorry! Not authorized, already used, or expired.

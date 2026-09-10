@@ -1,0 +1,20 @@
+Dobby needs your help with this, if you please. {question}
+Dobby is stuck and needs a little help. {question}
+Dobby cannot finish without you. {question}
+Dobby has a question, if you please. {question}
+Dobby needs one more thing from you. {question}
+Dobby is not sure and must ask. {question}
+Dobby would be grateful for your help. {question}
+Before Dobby can continue: {question}
+Dobby needs some guidance here. {question}
+Dobby humbly asks. {question}
+A small problem, if you please. {question}
+Dobby cannot proceed just yet. {question}
+Dobby must check something with you. {question}
+Dobby needs a bit more to go on. {question}
+Dobby is puzzled and needs your help. {question}
+Please help Dobby with this. {question}
+Dobby has hit a snag. {question}
+Dobby asks for your help, if you please. {question}
+One thing stops Dobby. {question}
+Dobby requires your answer. {question}

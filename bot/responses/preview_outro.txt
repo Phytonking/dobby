@@ -1,0 +1,20 @@
+Dobby will wait for your confirmation before changing anything. Confirm within 2 minutes. Times include their UTC offset.
+Nothing changes until you confirm. You have 2 minutes, and times include their UTC offset.
+Dobby touches nothing until you say so. Please confirm within 2 minutes; times include their UTC offset.
+Dobby waits for your word. Confirm within 2 minutes. Each time shows its UTC offset.
+No calendar change yet, Dobby promises. Confirm within 2 minutes; the times include their UTC offset.
+Dobby will not act without your confirmation. You have 2 minutes, and every time includes its UTC offset.
+The calendar stays untouched until you confirm within 2 minutes. Times include their UTC offset.
+Dobby is patient, but only for 2 minutes! Confirm to proceed. Times include their UTC offset.
+Please confirm within 2 minutes and Dobby will act. Times are shown with their UTC offset.
+Dobby holds the change until you confirm. This preview lasts 2 minutes. Times include their UTC offset.
+Your confirmation is needed within 2 minutes. Dobby changes nothing before that. Times include their UTC offset.
+Dobby awaits your confirmation for 2 minutes. Times include their UTC offset, so check them well.
+Dobby has not changed the calendar. Confirm within 2 minutes, and note that times include their UTC offset.
+Say the word within 2 minutes and Dobby will do it. Times include their UTC offset.
+Dobby does nothing until you confirm, and this preview expires in 2 minutes. Times include their UTC offset.
+The change waits on you. Confirm within 2 minutes. Times include their UTC offset.
+Dobby will make the change only after you confirm, within 2 minutes. Times include their UTC offset.
+Dobby keeps his hands off the calendar until you confirm within 2 minutes. Times include their UTC offset.
+Please confirm within 2 minutes so Dobby may proceed. Times include their UTC offset.
+Dobby will act on your confirmation, given within 2 minutes. Times include their UTC offset.

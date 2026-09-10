@@ -1,0 +1,20 @@
+The bot is busy. Please try again shortly.
+Dobby is juggling too many requests right now. Please try again shortly.
+Dobby has his hands full at the moment. Please try again in a little while.
+Dobby is very busy just now. Please ask again shortly.
+Too many requests at once! Dobby will be free again shortly.
+Dobby is overwhelmed for a moment. Please try again soon.
+Dobby cannot take another request right now. Please try again shortly.
+Dobby is working as fast as one elf can. Please try again in a moment.
+Dobby's queue is full. Please try again shortly.
+Dobby is busy with other requests. Please try again in a little while.
+Dobby begs a moment; too many requests are waiting. Try again shortly.
+Dobby is at capacity just now. Please try again soon.
+Dobby cannot keep up right this second. Please try again shortly.
+So many requests! Dobby will be able to help again in a moment.
+Dobby is busy. Please give it a few seconds and try again.
+Dobby is serving others right now. Please try again shortly.
+Dobby's plate is full. Please try again in a moment.
+Dobby is swamped for the moment. Please try again soon.
+Dobby cannot accept more work right now. Try again shortly, if you please.
+Dobby is fully occupied. Please try again in a little while.

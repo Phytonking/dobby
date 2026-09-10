@@ -1,0 +1,20 @@
+Dobby searched but found no upcoming meeting like “{title}”.
+Dobby could not find any upcoming meeting called “{title}”.
+No meeting like “{title}” is on the calendar, Dobby is sorry to say.
+Dobby looked everywhere and found nothing matching “{title}”.
+Dobby found no upcoming event resembling “{title}”.
+There is no meeting like “{title}” coming up. Dobby checked twice.
+Dobby is sorry, nothing on the calendar matches “{title}”.
+Dobby searched the next two months and found no “{title}”.
+Dobby could not match “{title}” to any upcoming meeting.
+Nothing called “{title}” is scheduled, as far as Dobby can see.
+Dobby found no event similar to “{title}”. Perhaps check /events?
+Dobby drew a blank on “{title}”. No upcoming meeting matches.
+Dobby cannot find “{title}” on the calendar.
+No upcoming meeting is like “{title}”, Dobby regrets to say.
+Dobby searched for “{title}” and came back empty-handed.
+Dobby finds no meeting matching “{title}” in the coming weeks.
+Dobby could not locate a meeting named “{title}”.
+The calendar has nothing resembling “{title}”, Dobby reports.
+Dobby found no match for “{title}”. Try /events for exact IDs.
+Dobby is sorry, but “{title}” matches no upcoming event.

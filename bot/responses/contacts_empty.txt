@@ -1,0 +1,20 @@
+Dobby has not learned any emails yet.
+Dobby's memory is empty. No contacts saved yet.
+Dobby knows nobody yet! Teach Dobby an email to begin.
+No contacts saved. Dobby is waiting to learn some.
+Dobby has no saved emails at all.
+Dobby's contact list is empty for now.
+Nobody is in Dobby's memory yet.
+Dobby has not been taught any emails.
+Dobby has no contacts to show yet.
+Dobby's memory file is empty. Add someone, if you please.
+Dobby has yet to learn a single email.
+No one is saved in Dobby's contacts.
+Dobby has not remembered anyone yet.
+Dobby's list of people is empty.
+Dobby knows no emails yet, but is eager to learn.
+There are no saved contacts for Dobby to list.
+Dobby has nothing in his contacts.
+Dobby's memory holds no contacts yet.
+Dobby has no emails saved. Try `/contacts add`.
+Dobby is waiting for his first contact.

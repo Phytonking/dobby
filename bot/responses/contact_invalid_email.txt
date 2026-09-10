@@ -1,0 +1,20 @@
+Dobby could not find an email address in that. Try `Name: name@example.com`.
+Dobby did not see an email there. Please reply like `Name: name@example.com`.
+That does not look like an email to Dobby. Try `Name: name@example.com`, if you please.
+Dobby needs a proper email address, such as `Name: name@example.com`.
+Dobby is confused; no email address was found. Reply with `Name: name@example.com`.
+Dobby could not read an email from that. Please use `Name: name@example.com`.
+Hmm, Dobby did not find an address. Try again with `Name: name@example.com`.
+Dobby needs the email in this form: `Name: name@example.com`.
+Dobby saw no email address in your reply. Please try `Name: name@example.com`.
+Dobby is sorry, that did not contain a valid email. Use `Name: name@example.com`.
+Dobby could not make out an email. Reply as `Name: name@example.com`, if you please.
+No email found, oh dear. Dobby understands `Name: name@example.com`.
+Dobby needs something like `Name: name@example.com` to continue.
+Dobby did not understand that as an email. Try `Name: name@example.com`.
+Please give Dobby an email address in the form `Name: name@example.com`.
+Dobby found no valid email there. Reply with `Name: name@example.com`.
+Dobby could not spot an address. Please write `Name: name@example.com`.
+That reply had no email Dobby could use. Try `Name: name@example.com`.
+Dobby is still waiting for an email. Reply like `Name: name@example.com`.
+Dobby needs a real email address, for example `Name: name@example.com`.

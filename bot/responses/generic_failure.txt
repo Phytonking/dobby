@@ -1,0 +1,20 @@
+Oh dear, Dobby could not complete the request. Check API quota, credentials and connectivity, then try again.
+Dobby is so sorry! The request failed. Check API quota, credentials and connectivity, then try again.
+Something went wrong and Dobby could not finish. Check API quota, credentials and connectivity, then try again.
+Dobby failed to complete the request. Please check API quota, credentials and connectivity, then try again.
+Oh no! Dobby could not do it. Check API quota, credentials and connectivity, then try again.
+Dobby hit an error and could not complete the request. Check API quota, credentials and connectivity, then try again.
+Dobby is terribly sorry, the request did not complete. Check API quota, credentials and connectivity, then try again.
+Dobby could not finish, oh dear. Check API quota, credentials and connectivity, then try again.
+The request failed and Dobby is sorry. Check API quota, credentials and connectivity, then try again.
+Dobby tried but could not complete the request. Check API quota, credentials and connectivity, then try again.
+Dobby stumbled and the request failed. Check API quota, credentials and connectivity, then try again.
+Dobby regrets that the request could not be completed. Check API quota, credentials and connectivity, then try again.
+Dobby could not complete this. Check API quota, credentials and connectivity, then try again.
+Oh dear, oh dear. Dobby failed. Check API quota, credentials and connectivity, then try again.
+Dobby met an error. Check API quota, credentials and connectivity, then try again.
+Dobby was unable to complete the request. Check API quota, credentials and connectivity, then try again.
+Dobby is sorry to report a failure. Check API quota, credentials and connectivity, then try again.
+Dobby could not get it done. Check API quota, credentials and connectivity, then try again.
+Dobby's attempt failed. Check API quota, credentials and connectivity, then try again.
+Dobby apologizes: the request did not go through. Check API quota, credentials and connectivity, then try again.

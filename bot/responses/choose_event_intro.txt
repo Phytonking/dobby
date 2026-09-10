@@ -1,0 +1,20 @@
+Dobby found more than one likely meeting. Reply with the number, if you please:
+Dobby found several meetings that could match. Reply with a number:
+Which of these does Dobby need? Reply with the number:
+Dobby is torn between these meetings. Reply with the number of the right one:
+More than one meeting fits. Reply with its number, if you please:
+Dobby found these candidates. Please reply with a number:
+Dobby needs you to pick one. Reply with the number:
+Dobby found a few possible meetings. Reply with the number of the right one:
+Several meetings match. Reply with a number so Dobby knows which:
+Dobby could not decide between these. Reply with the number, if you please:
+Please choose one by replying with its number:
+Dobby has narrowed it to these. Reply with a number:
+Which one, if you please? Reply with the number:
+Dobby found these similar meetings. Reply with the matching number:
+Dobby needs a number to continue. Here are the options:
+Reply with the number of the meeting you mean:
+Dobby has candidates! Reply with the number of the right one:
+Dobby found multiple matches. Reply with a number, if you please:
+Pick the meeting by replying with its number:
+Dobby lists the possible meetings. Reply with a number to choose:
