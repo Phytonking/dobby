@@ -24,7 +24,14 @@ def pending_bot(mention=True, owner=1):
     bot = Mock()
     bot.user.id = 5
     bot.member_allowed = AsyncMock(return_value=True)
-    bot.work = AsyncMock(return_value={"id": "abc"})
+    bot.work = AsyncMock(
+        return_value={
+            "id": "abc",
+            "summary": "planning | Sync",
+            "start": {"dateTime": "2030-10-12T10:00:00-06:00"},
+        }
+    )
+    bot.config.timezone = "UTC"
     bot.error = Bot.error
     bot.on_raw_reaction_add = Bot.on_raw_reaction_add.__get__(bot)
     bot.finish = Bot.finish.__get__(bot)
@@ -63,7 +70,9 @@ def test_only_owner_can_confirm_and_a_second_reaction_never_writes_again():
         bot.work.assert_awaited_once()
         bot.member_allowed.assert_awaited_once_with(1, 40, mention=True)
         content = message.edit.call_args.kwargs["content"]
-        assert "created the meeting" in content and "abc" in content
+        assert "created the meeting" in content
+        assert "planning | Sync, 10/12" in content
+        assert "abc" not in content
         message.clear_reactions.assert_awaited_once()
         assert 900 not in bot.confirmations
 

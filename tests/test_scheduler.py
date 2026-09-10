@@ -95,6 +95,37 @@ def test_unknown_invitee_names_raise_need_contacts_and_known_ones_resolve():
     assert proposal.body["attendees"] == [{"email": "maya@x.com"}, {"email": "leo@y.org"}]
 
 
+def test_titles_are_prefixed_with_the_thread_or_channel_once():
+    from bot.models import place_name, titled
+
+    start, end = times()
+    thread = {"channel": "planning", "thread": "Q4 launch prep"}
+    body = event_body(
+        Plan(action="create", summary=" Design  review ", start=start, end=end), None, "UTC", (), thread
+    )
+    assert body["summary"] == "Q4 launch prep | Design review"
+    body = event_body(
+        Plan(action="create", summary="q4 launch prep | Design review", start=start), None, "UTC", (), thread
+    )
+    assert body["summary"] == "q4 launch prep | Design review"
+    assert place_name({"channel": "general", "thread": None}) == "general"
+    assert titled("", "Sync") == "Sync" and titled("general", "") == ""
+    body = event_body(
+        Plan(action="update", summary="Renamed"), {"etag": "x"}, "UTC", (), {"channel": "general"}
+    )
+    assert body["summary"] == "general | Renamed"
+    assert body == {"summary": "general | Renamed"}
+
+
+def test_event_label_shows_title_and_month_day_in_team_zone():
+    from bot.models import event_label
+
+    event = {"summary": "general | Sync", "start": {"dateTime": "2030-10-12T04:30:00+00:00"}}
+    assert event_label(event, "America/Denver") == "general | Sync, 10/11"
+    assert event_label({"start": {"date": "2030-03-05"}}, "UTC") == "(untitled), 3/5"
+    assert event_label({"summary": "X"}, "UTC") == "X"
+
+
 def test_create_defaults_to_one_hour():
     start, _ = times()
     body = event_body(Plan(action="create", summary="Sync", start=start), None, "UTC")
@@ -196,16 +227,16 @@ def test_calendar_patch_uses_etag_and_rechecks_conflicts(existing):
     planner, api = Mock(), Mock()
     api.get.return_value = existing
     planner.plan.return_value = Plan(action="update", summary="Changed")
-    proposal = Scheduler(planner, api, "UTC").prepare("rename", "abc123", 123)
+    proposal = Scheduler(planner, api, "UTC").prepare("rename", "abc123", 123, None, {"channel": "ops"})
     calendar = Calendar.__new__(Calendar)
     calendar.call = Mock(return_value={})
     calendar.check_conflicts = Mock()
     calendar.apply(proposal)
-    calendar.check_conflicts.assert_called_once_with({"summary": "Changed"}, "abc123")
+    calendar.check_conflicts.assert_called_once_with({"summary": "ops | Changed"}, "abc123")
     args, kwargs = calendar.call.call_args
     assert args == ("PATCH", "abc123")
     assert kwargs["headers"] == {"If-Match": '"v1"'}
-    assert kwargs["json"] == {"summary": "Changed"}
+    assert kwargs["json"] == {"summary": "ops | Changed"}
     assert kwargs["params"]["sendUpdates"] == "all"
 
 

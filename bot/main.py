@@ -15,7 +15,7 @@ from discord import app_commands
 from .calendar import Calendar
 from .config import Config
 from .contacts import Contacts, mask, parse_pairs, valid_email
-from .models import ConfigError, UserError
+from .models import ConfigError, UserError, event_label
 from .planner import Planner
 from .service import ChooseEvent, NeedContacts, NeedTitle, Scheduler
 from .voice import say
@@ -25,6 +25,11 @@ log = logging.getLogger("scheduler")
 
 def safe(text):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(text)))
+
+
+def plain_title(text):
+    """Escaped like safe(), but keeps the single " | " of "<thread or channel> | <event>" readable."""
+    return safe(text).replace("\\|", "|")
 
 
 def describe_place(channel):
@@ -53,7 +58,7 @@ def preview(proposal):
             )
         )
     lines += [
-        f"Title: {safe(merged.get('summary', '(untitled)'))}",
+        f"Title: {plain_title(merged.get('summary', '(untitled)'))}",
         f"Start: {safe(merged.get('start', {}).get('dateTime', ''))}",
         f"End: {safe(merged.get('end', {}).get('dateTime', ''))}",
     ]
@@ -409,8 +414,9 @@ class Bot(discord.Client):
                 text = say(
                     {"create": "created", "update": "updated", "delete": "deleted"}[entry.proposal.action]
                 )
-                if result.get("id"):
-                    text += f" Event ID: `{result['id']}`"
+                # Name and date instead of the event ID: "<thread or channel> | <event>, <m>/<d>".
+                event = {**(entry.proposal.existing or {}), **entry.proposal.body, **(result or {})}
+                text += "\n" + plain_title(event_label(event, self.config.timezone))
                 log.info(
                     "calendar_operation action=%s user=%s guild=%s",
                     entry.proposal.action,
@@ -514,7 +520,10 @@ class Bot(discord.Client):
             if not await self.gate(interaction):
                 return
             try:
-                proposal = await self.work(self.scheduler.prepare, request, event_id, interaction.id)
+                place = describe_place(interaction.channel)
+                proposal = await self.work(
+                    self.scheduler.prepare, request, event_id, interaction.id, None, place
+                )
                 reply = await interaction.original_response()
                 await self.present(reply, preview(proposal), interaction.user.id, proposal, mention=False)
             except Exception as exc:

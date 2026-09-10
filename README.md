@@ -283,6 +283,10 @@ The optional Pi timer checks every five minutes and recreates the container when
 - Dobby never grants calendar sharing or returns Google credentials to users. Restrict who can assign the scheduler role.
 - Rotate leaked credentials immediately. Removing a file does not remove it from Git history. Enable GitHub push protection where available.
 
+## Event titles and confirmations
+
+Every event Dobby creates or renames is titled `<thread or channel name> | <event name>`, for example `Q4 launch prep | Design review` when asked from that thread, or `planning | Design review` from the channel itself. Titles that already carry the prefix are not prefixed again. After you confirm with 🟢, Dobby reports the meeting as `<thread or channel name> | <event name>, <month>/<day>` (in the team timezone) rather than showing the event ID; use `/events` when you need the ID itself.
+
 ## Deleting or changing a meeting without an ID
 
 `@Dobby delete the design review` works without an event ID. Dobby takes the meeting name from your request or, for "delete that meeting", from the recent conversation, then searches the next 60 days of the calendar for similar titles. A single clear match comes back as a preview that asks "is this the right meeting?", so 🟢 both confirms the match and deletes it. If nothing in the request or conversation names the meeting, Dobby asks for the title; reply to that question and it searches. If several meetings look alike, Dobby lists up to three and you reply with the number. `/schedule` still accepts `event_id` from `/events` for an exact selection.

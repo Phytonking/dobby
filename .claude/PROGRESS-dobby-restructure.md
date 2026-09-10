@@ -24,6 +24,12 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 - `bot/models.py`: `Plan.invitees`, `Plan.target_title`, `is_editable(event)`, `event_body(..., emails)` merges attendees with existing guests because PATCH replaces the array.
 - `bot/voice.py`: `FIELDS` lists the placeholders each key may use; `FALLBACK` is used if a file is missing. `tests/conftest.py` pins `pick()` to the first line so wording assertions are stable.
 
+## Follow-up change (same day): titles and confirmation labels
+
+- Event titles are now `<thread or channel name> | <event name>` (`models.titled`, applied in `event_body` for creates and renames; never prefixed twice). The `/schedule` slash command now also passes its channel as `place`.
+- The 🟢 confirmation shows `<title>, <month>/<day>` in the team timezone (`models.event_label`) instead of the event ID. `main.plain_title` keeps the pipe unescaped.
+- Quotes in the user's example were read as placeholder markers, so no literal quote characters are written into titles.
+
 ## Deviations and notes
 
 - The first commit also removed `ComprehensiveTest.txt`; it was already deleted in the working tree before work started, and `git add -A` staged it.

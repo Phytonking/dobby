@@ -100,7 +100,7 @@ class Scheduler:
         body = (
             {}
             if plan.action == "delete"
-            else event_body(plan, existing, self.timezone, list(emails.values()))
+            else event_body(plan, existing, self.timezone, list(emails.values()), place)
         )
         if plan.action != "delete":
             self.calendar.check_conflicts(body, event_id)

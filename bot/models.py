@@ -52,12 +52,44 @@ def interval(start, end):
     return a, b
 
 
-def event_body(plan, existing, zone, emails=()):
+TITLE_SEPARATOR = " | "
+
+
+def place_name(place):
+    """The thread name when the request came from a thread, otherwise the channel name."""
+    place = place or {}
+    return " ".join(str(place.get("thread") or place.get("channel") or "").split())
+
+
+def titled(prefix, summary):
+    """Every event title reads "<thread or channel> | <event name>"; never prefix twice."""
+    summary = " ".join(str(summary or "").split())
+    if not prefix or not summary or summary.lower().startswith(prefix.lower() + TITLE_SEPARATOR):
+        return summary
+    return f"{prefix}{TITLE_SEPARATOR}{summary}"[:200]
+
+
+def event_label(event, zone):
+    """Confirmation text: "<thread or channel> | <event name>, <month>/<day>" in the team zone."""
+    summary = " ".join(str(event.get("summary") or "(untitled)").split())
+    start = event.get("start", {}).get("dateTime") or event.get("start", {}).get("date")
+    try:
+        when = datetime.fromisoformat(start)
+        if when.tzinfo is not None:
+            when = when.astimezone(ZoneInfo(zone))
+        return f"{summary}, {when.month}/{when.day}"
+    except TypeError, ValueError:
+        return summary
+
+
+def event_body(plan, existing, zone, emails=(), place=None):
     if plan.action == "create" and not (plan.summary and plan.summary.strip()):
         raise UserError("Please supply a meeting title.")
     body = {
         k: getattr(plan, k) for k in ("summary", "description", "location") if getattr(plan, k) is not None
     }
+    if "summary" in body:
+        body["summary"] = titled(place_name(place), body["summary"])
     if plan.action == "create" or plan.start is not None or plan.end is not None:
         start = plan.start or (existing or {}).get("start", {}).get("dateTime")
         end = plan.end or (existing or {}).get("end", {}).get("dateTime")
