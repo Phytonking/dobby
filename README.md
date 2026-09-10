@@ -19,13 +19,14 @@ Everything runs on your own machine, so there is nothing to pay for hosting. Tha
 
 ## Features
 
-- Mention `@Dobby` to create, rename, reschedule, change descriptions/locations, or delete meetings.
+- Mention `@Dobby` to create, rename, reschedule, change descriptions/locations, or delete meetings. Deletes and changes find the meeting by title, so no event ID is needed.
+- Invite people by name: Dobby asks for an email once, remembers it in `data/contacts.json`, and sends Google invitations.
 - Mention requests always use up to twelve recent channel messages, plus the channel and thread names, so Dobby can propose a title from the discussion instead of asking.
 - New meetings default to **one hour** unless you specify otherwise.
-- Shared previews and results in the requesting channel or thread for mentions and slash commands. Only the requester can confirm or cancel.
+- Structured previews in the requesting channel or thread, confirmed with a 🟢 or 🔴 reaction by the requester only.
 - Server, role/user, and channel restrictions, checked again at confirmation.
 - Conflict detection, exact event selection, and protection against overwriting newer edits.
-- Local read-only credential mounts; no secrets in images or your public repository.
+- Read-only credential mounts and one small writable `data/` folder; no secrets in images or your public repository.
 - Docker restart policy, bounded logs, and optional automatic Pi updates from tested GitHub images.
 
 Design: [ARCHITECTURE.md](ARCHITECTURE.md). Pi deployment and updates: [DEPLOYMENT.md](docs/DEPLOYMENT.md). Sources: [RESEARCH.md](docs/RESEARCH.md).
@@ -36,7 +37,7 @@ Six steps, in order. Steps 1–4 gather credentials, step 5 verifies them, step 
 
 | Step | What it does | Needs a browser? |
 | --- | --- | --- |
-| 1 | Install Docker, create `.env` and `secrets/` | No |
+| 1 | Install Docker, create `.env`, `secrets/` and `data/` | No |
 | 2 | Create the Discord bot, fill in IDs | Yes |
 | 3 | Get a Gemini API key | Yes |
 | 4 | Link the Google account | Yes |
@@ -54,35 +55,35 @@ Follow the official [Windows Docker Desktop installation](https://docs.docker.co
 
 Clone your repository and open a terminal in its folder. You do **not** need host Python when using Docker.
 
-Create your configuration file and secrets folder now.
+Create your configuration file, secrets folder and data folder now.
 
 Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
-New-Item -ItemType Directory -Force secrets
+New-Item -ItemType Directory -Force secrets, data
 docker compose version
-Get-Item .env, secrets | Select-Object Name, Mode
+Get-Item .env, secrets, data | Select-Object Name, Mode
 ```
 
 Pi/Linux:
 
 ```bash
 cp .env.example .env
-mkdir -p secrets
-chmod 700 secrets
+mkdir -p secrets data
+chmod 700 secrets data
 chmod 600 .env
 docker compose version
-ls -ld .env secrets
+ls -ld .env secrets data
 id -u
 id -g
 ```
 
-**Expected result:** `.env` is a **file** and `secrets` is an empty **directory**. On Windows, `Mode` reads `-a---` for `.env` and `d----` for `secrets`.
+**Expected result:** `.env` is a **file**; `secrets` and `data` are empty **directories**. On Windows, `Mode` reads `-a---` for `.env` and `d----` for the directories. `data/` holds Dobby's contact memory and must stay writable by the container user.
 
 > ⚠️ **Do not skip this.** If `.env` or `secrets/google-token.json` is missing when you run any `docker compose` command, Docker creates a **directory** with that name and mounts it over Dobby's credential paths. Step 5 reports this clearly. To fix it, delete the stray directory and repeat this step.
 
-On Pi/Linux, edit `.env` and set `DOBBY_UID` and `DOBBY_GID` to the two IDs that `id -u` and `id -g` printed. This lets the non-root container read your private files and create the OAuth token as your user. Windows keeps the defaults.
+On Pi/Linux, edit `.env` and set `DOBBY_UID` and `DOBBY_GID` to the two IDs that `id -u` and `id -g` printed. This lets the non-root container read your private files, write `data/contacts.json`, and create the OAuth token as your user. Windows keeps the defaults.
 
 ### Step 2: Create and invite Dobby in Discord
 
@@ -174,7 +175,7 @@ docker compose logs --tail 50 -f dobby
 
 If the log instead repeats `startup_failed`, stop with `docker compose down` and rerun step 5 — the restart policy retries a misconfigured container indefinitely.
 
-`.env` and the OAuth token are read-only runtime mounts, so they survive removing and rebuilding the container. After changing either, apply it with `docker compose up -d --force-recreate --no-build`.
+`.env` and the OAuth token are read-only runtime mounts and `data/` is a writable bind mount, so all three survive removing and rebuilding the container. After changing either, apply it with `docker compose up -d --force-recreate --no-build`.
 
 Run **one instance per Discord token**. Stop Windows Dobby with `docker compose down` before starting the Pi copy. To run both at once for testing, use a separate Discord application/token and a test calendar.
 
@@ -191,7 +192,7 @@ Ask for the scheduler role and use a channel or thread Dobby is allowed in. Type
 @Dobby schedule a Planning meeting tomorrow at 10am for 45 minutes
 ```
 
-The first request defaults to one hour. Times use the team timezone unless you specify another. Review the preview in the channel or thread. Dobby puts 🟢 and 🔴 reactions on its own preview message: react 🟢 to save the change or 🔴 to discard it. The full details are in the message itself, never in an attached file. No write occurs before confirmation. If a date or time is missing, send a new complete request in the channel. Dobby only keeps a conversation going for its own questions (a missing email, the meeting title, or which of several matches you meant), and only for five minutes. Dobby never sends DMs.
+The first request defaults to one hour. Times use the team timezone unless you specify another. Dobby replies with a preview (bold **Title**, **When**, **Location**, **Invitees** lines) and puts 🟢 and 🔴 reactions on it: react 🟢 to save or 🔴 to discard. Nothing is written before you confirm. Every event is titled `<thread or channel name> | <event name>`, and the confirmation names the event and its month/day instead of an ID. If a date or time is missing, send a new complete request. Dobby only keeps a conversation going for its own questions (a missing email, the meeting title, or which of several matches you meant), and only for five minutes. Dobby never sends DMs.
 
 ### Turn a discussion into a meeting
 
@@ -203,19 +204,25 @@ You: @Dobby make this a meeting
 
 Every mention request sends up to twelve preceding messages from that channel or thread, with author display names, plus the channel and thread names. Dobby uses them to fill in a missing title before asking you for one. Bot messages are excluded, text is capped at 1,500 characters each, and requesters without Read Message History get no context. No attachments, links, other channels, or archives are fetched. Slash commands send no channel context. Review the extracted details before confirming.
 
-### Find, modify, or delete a meeting
+### Modify or delete a meeting
 
-1. Run `/events days:30` for a shared list and event IDs in the current channel.
-2. Copy the exact event ID.
-3. Use it in a slash command's `event_id` option, or a mention:
+Name the meeting and Dobby finds it in the next 60 days of the calendar:
 
 ```text
-@Dobby move this meeting to tomorrow at 3pm event_id:PASTE_EVENT_ID
-@Dobby rename this meeting to Release Review event_id:PASTE_EVENT_ID
-@Dobby delete this meeting event_id:PASTE_EVENT_ID
+@Dobby move the release review to tomorrow at 3pm
+@Dobby delete the design review
+@Dobby delete that meeting          (title taken from the recent discussion)
 ```
 
-Replace `PASTE_EVENT_ID`, review, then confirm. Moving an event preserves its duration unless specified otherwise. Existing guests receive Google notifications for edits/deletions.
+A single clear match comes back as a preview asking "is this the right meeting?", so 🟢 confirms both the match and the change. If nothing names the meeting, Dobby asks for the title; if several look alike, it lists up to three and you reply with the number. Update previews and confirmations list every change as `old → new`. Moving an event preserves its duration unless specified otherwise, and existing guests receive Google notifications. For an exact selection, run `/events days:30`, copy the ID, and add `event_id:PASTE_EVENT_ID` to the request.
+
+### Invite people
+
+```text
+@Dobby set up a design review Friday at 2pm and invite Maya and Leonard
+```
+
+Dobby looks each name up in its contact memory. For anyone unknown it asks in the channel; reply to that question with `Maya: maya@example.com` (or just the address when one name is missing) and Dobby saves it and continues the request. `/contacts action:add name:Maya email:maya@example.com` teaches Dobby ahead of time, `action:list` shows names with masked addresses, and `action:remove` forgets one. Contacts are shared by all allowed users and stored in `data/contacts.json`. Invitees receive Google Calendar invitations when you confirm.
 
 ### Slash command reference
 
@@ -226,9 +233,10 @@ Replace `PASTE_EVENT_ID`, review, then confirm. Moving an event preserves its du
 | `/schedule request:Move this meeting to tomorrow at 3pm event_id:ID` | Reschedule |
 | `/schedule request:Rename this meeting to Review event_id:ID` | Rename |
 | `/schedule request:Delete this meeting event_id:ID` | Preview deletion |
+| `/contacts action:add name:Maya email:maya@example.com` | Save, list or remove invitee emails (`add`, `list`, `remove`) |
 | `/calendar_help` | Examples and privacy information |
 
-Mention and slash-command previews, event lists, and results are visible to everyone with access to the requesting channel or thread. Dobby does not send DMs. Only the requester can confirm or cancel a proposal. Confirmations expire after two minutes. Restarts/updates invalidate pending previews. After an uncertain network failure, check `/events` before retrying because the write may already have completed.
+Mention and slash-command previews, event lists, and results are visible to everyone with access to the requesting channel or thread. Dobby does not send DMs. Only the requester can confirm or cancel a proposal. Previews expire after two minutes and Dobby's questions after five. Restarts/updates invalidate both. After an uncertain network failure, check `/events` before retrying because the write may already have completed.
 
 ## Everyday Docker commands
 
@@ -240,7 +248,19 @@ Mention and slash-command previews, event lists, and results are visible to ever
 | Stop/remove container, keep secrets | `docker compose down` |
 | Apply changed credentials/config | `docker compose up -d --force-recreate --no-build` |
 | Apply source updates | `git pull --ff-only`, then `docker compose up -d --build` |
+| Restart without rebuilding | `docker compose restart dobby` |
+| Rebuild from scratch (dependency or Dockerfile changes) | `docker compose build --no-cache`, then `docker compose up -d` |
 | Check config without starting | `docker compose run --rm --no-deps dobby python -m bot.main --check` |
+| Check config of the running container | `docker compose exec dobby python -m bot.main --check` |
+| Show the effective Compose configuration | `docker compose config` |
+| Recent logs only | `docker compose logs --since 1h dobby` |
+| CPU/memory use | `docker stats --no-stream $(docker compose ps -q)` |
+| Open a shell inside the container | `docker compose exec dobby sh` |
+| View saved contacts | `docker compose exec dobby cat /data/contacts.json` |
+| Back up contact memory | copy `data/contacts.json` somewhere safe; restore by copying it back |
+| Switch to the published image (Pi) | `docker compose -f compose.yaml -f compose.registry.yaml pull dobby`, then `... up -d --no-build --pull never dobby` |
+| Remove container and local image | `docker compose down --rmi local` |
+| Reclaim disk from old images | `docker image prune -f` |
 | Run the test suite in Docker | `docker compose -f compose.test.yaml run --rm tests` |
 | Run lint/format checks in Docker | `docker compose -f compose.test.yaml run --rm lint` |
 
@@ -265,7 +285,7 @@ docker compose run --rm --no-deps dobby python -m bot.main --check
 
 It prints `config_ok` and exits `0` when the settings and token file are usable. Any problem exits `2` and names the setting to fix, for example `Missing configuration: DISCORD_TOKEN` or `TEAM_TIMEZONE is not a known IANA zone`. Run this before `docker compose up`: the runtime restart policy otherwise retries a misconfigured container indefinitely.
 
-Create `.env` and `secrets/` before the first `up`. Docker creates a **directory** where a missing secret file was expected, which then mounts over the runtime paths; the preflight reports this explicitly. If you have host Python, `python scripts/bootstrap.py` creates both correctly and reports the Pi UID/GID to set.
+Create `.env` and `secrets/` before the first `up`. Docker creates a **directory** where a missing secret file was expected, which then mounts over the runtime paths; the preflight reports this explicitly. If you have host Python, `python scripts/bootstrap.py` creates `.env`, `secrets/` and `data/` correctly and reports the Pi UID/GID to set.
 
 ## Automatic updates from GitHub
 
@@ -276,30 +296,19 @@ The optional Pi timer checks every five minutes and recreates the container when
 ## Secrets and access
 
 - Credentials belong in local `.env` and `secrets/`, ignored by Git and Docker builds. Only `.env.example` belongs in Git.
-- Compose mounts only `.env` and `google-token.json` into the runtime, read-only. The OAuth client file is only needed for linking.
+- Compose mounts `.env` and `google-token.json` into the runtime read-only, plus `./data` read-write for `contacts.json`. The OAuth client file is only needed for linking.
+- `data/contacts.json` holds teammates' email addresses in plain text; keep it out of Git (it is ignored) and treat the folder like `secrets/`.
 - On Pi use mode `600` for credential files and `700` for `secrets/`, owned by the configured container UID/GID. On Windows restrict the folder to your account.
 - Compose file secrets are **not encrypted at rest**. Host/Docker administrators and deployed code can read them; protect the device and main branch.
 - Authorized users can manage all supported events on the configured calendar. OAuth can reach other calendars available to the linked account; use a dedicated account.
 - Dobby never grants calendar sharing or returns Google credentials to users. Restrict who can assign the scheduler role.
 - Rotate leaked credentials immediately. Removing a file does not remove it from Git history. Enable GitHub push protection where available.
 
-## Event titles and confirmations
-
-Every event Dobby creates or renames is titled `<thread or channel name> | <event name>`, for example `Q4 launch prep | Design review` when asked from that thread, or `planning | Design review` from the channel itself. Titles that already carry the prefix are not prefixed again. After you confirm with 🟢, Dobby reports the meeting as `<thread or channel name> | <event name>, <month>/<day>` (in the team timezone) rather than showing the event ID; use `/events` when you need the ID itself. Previews and confirmations use bold labels (Title, When, Location, Invitees), and an update lists every change as `old → new` both in the preview and after you confirm.
-
-## Deleting or changing a meeting without an ID
-
-`@Dobby delete the design review` works without an event ID. Dobby takes the meeting name from your request or, for "delete that meeting", from the recent conversation, then searches the next 60 days of the calendar for similar titles. A single clear match comes back as a preview that asks "is this the right meeting?", so 🟢 both confirms the match and deletes it. If nothing in the request or conversation names the meeting, Dobby asks for the title; reply to that question and it searches. If several meetings look alike, Dobby lists up to three and you reply with the number. `/schedule` still accepts `event_id` from `/events` for an exact selection.
-
-## Inviting people
-
-Say `@Dobby set up a design review Friday at 2pm and invite Maya and Leonard`. Dobby looks each name up in its contact memory. For anyone it does not know, it asks in the channel; reply to that question with `Maya: maya@example.com` (or just the address when one name is missing) and Dobby saves it, then continues the original request automatically. You have five minutes to answer. `/contacts action:add name:Maya email:maya@example.com` teaches Dobby ahead of time; `/contacts action:list` shows names with masked addresses; `/contacts action:remove name:Maya` forgets one. Contacts are shared by everyone allowed to use the bot and are stored in `data/contacts.json` (`DOBBY_DATA_DIR`), which Compose mounts from `./data` so it survives rebuilds. Invitees receive Google Calendar invitations when you confirm.
-
 ## Limitations
 
 - One active instance, one Discord server, one configured Google calendar.
 - Single future timed events up to 24 hours; no recurring/all-day event edits.
-- Google Calendar entries, not Discord Scheduled Events. Invitations work by name once Dobby has learned the person's email (see below); existing attendees are preserved and merged. No Meet creation or sharing.
+- Google Calendar entries, not Discord Scheduled Events. Invitations work by name once Dobby has learned the person's email; existing attendees are preserved and merged. No Meet creation or sharing.
 - Conflicts check the linked calendar only, not individual private availability. Another app can write an overlap between the check and insert.
 - Gemini quotas and data terms still apply. Docker does not make paid API usage free.
 - Continuous outbound internet is needed. No router port forwarding is required.
@@ -319,6 +328,8 @@ Say `@Dobby set up a design review Friday at 2pm and invite Maya and Leonard`. D
 | Mention ignored | Actual mention, allowed role, correct text channel/server, ten-second cooldown |
 | Channel preview unavailable | Grant Send Messages, Send Messages in Threads, and Add Reactions in the requesting channel |
 | Context inaccessible | Bot and requester need View Channel and Read Message History |
+| Reactions do nothing | Only the requester within two minutes; bot needs Add Reactions; look for `mention_access_denied` in the logs |
+| Contacts not remembered | `data/` must exist and be writable by `DOBBY_UID`; rerun `python scripts/bootstrap.py` or `mkdir data` and recreate the container |
 | Google auth expires | Relink Testing-mode OAuth and recreate container |
 | Gemini fails | Check key, model and quota; there is no paid fallback |
 | Old preview fails | Restart/update, expiry, permission change or stale event; request another preview |
@@ -333,7 +344,8 @@ python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python -m pytest -q
 .\.venv\Scripts\ruff check bot scripts tests
+.\.venv\Scripts\ruff format --check bot scripts tests
 .\.venv\Scripts\python -m bot.main
 ```
 
-On Pi/Linux use `.venv/bin/python`. Stop Docker Dobby before launching a host copy with the same token. Dependencies are pinned in `requirements.txt`; direct ranges are in `requirements.in`. Tests mock external APIs; live testing requires your credentials.
+On Pi/Linux use `.venv/bin/python`. Stop Docker Dobby before launching a host copy with the same token. Dependencies are pinned in `requirements.txt`; direct ranges are in `requirements.in`. Tests mock external APIs; live testing requires your credentials. Dobby's phrasings live in `bot/responses/*.txt` (20 lines per file); edit them freely, the suite checks every file still has 20 usable lines.
