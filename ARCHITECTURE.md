@@ -33,6 +33,7 @@ flowchart TD
 | `bot/main.py` | Discord lifecycle, mentions/context, commands, channel confirmations |
 | `bot/voice.py` | Dobby's voice: `say(key)` reads `bot/responses/<key>.txt` (20 phrasings each) on every call and picks one at random; nothing is cached |
 | `bot/planner.py` | Gemini structured output with context treated as untrusted data |
+| `bot/chat.py` | Capability summary and off-topic replies (Gemini, Dobby voice, always ends with a farewell); decides what is not a calendar request before the planner runs |
 | `bot/lookup.py` | Fuzzy title search over upcoming editable events for update/delete without an ID |
 | `bot/contacts.py` | Name -> email memory (`data/contacts.json`) and the reply parser for Dobby's email questions |
 | `bot/models.py` | Writable field schema, time validation, duration/default/timezone rules |

@@ -73,6 +73,9 @@ FALLBACK = {
     "choose_event_intro": "Dobby found more than one likely meeting. Reply with the number, if you please:",
     "no_matching_event": "Dobby searched but found no upcoming meeting like “{title}”.",
     "confirm_event_match": "Dobby found “{title}” starting {start}. Is this the right meeting?",
+    "capabilities_intro": "Dobby would be delighted to explain! Here is what Dobby can do for you.",
+    "chat_fallback": "Dobby is not quite sure how to answer that, but Dobby is very happy you asked!",
+    "farewell": "Dobby is going now! Dobby has socks to fold and a calendar to guard.",
 }
 
 

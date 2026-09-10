@@ -36,6 +36,12 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 - `preview(proposal, zone, note)` now emits bold labels (`**Title:**`, `**When:**`, `**Invitees:**`…), a `**Changes:**` bullet list for updates, and the context note in italics at the end.
 - The 🟢 confirmation shows `**Event:** <title>, <m>/<d>` and, for updates, `**Changed:**` bullets.
 
+## Follow-up change: questions and off-topic chat (`bot/chat.py`)
+
+- `Concierge.respond(request, history, place)` -> `("schedule", None)` for the planner, `("capabilities", text)` for "what can you do", or `("chat", text)` for anything else. Regex fast paths avoid a Gemini call for obvious cases; ambiguous messages get one structured Gemini call that classifies and, for chat, writes the reply.
+- Chat replies end with a line from the new `farewell` pool ("Dobby is going now…") and create no follow-up state. New pools: `capabilities_intro`, `chat_fallback`, `farewell`.
+- `main.py` changes are limited to constructing the concierge, a `converse()` executor hop, and one check in `handle_request` for fresh mentions (`fresh=True`); resumed follow-ups skip it.
+
 ## Deviations and notes
 
 - The first commit also removed `ComprehensiveTest.txt`; it was already deleted in the working tree before work started, and `git add -A` staged it.

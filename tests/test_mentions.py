@@ -26,6 +26,7 @@ def setup(mention_channels=frozenset({40})):
     bot.ask = Bot.ask.__get__(bot)
     bot.awaiting = {}
     bot.contacts = Mock()
+    bot.converse = AsyncMock(return_value=("schedule", None))
     bot.present = AsyncMock()
     bot.take_cooldown.return_value = True
     bot.work = AsyncMock(
@@ -487,5 +488,37 @@ def test_ambiguous_title_lists_candidates_and_a_number_reply_selects_one():
         assert bot.work.call_args.args[2] == "second"
         assert (40, 1) not in bot.awaiting
         bot.present.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_questions_about_the_bot_or_off_topic_chat_are_answered_without_planning():
+    async def run():
+        bot, message = setup()
+        message.content = "<@5> what can you do?"
+        bot.converse.return_value = ("capabilities", "Dobby can do things.")
+        await Bot.on_message(bot, message)
+        bot.converse.assert_awaited_once()
+        assert bot.converse.await_args.args[0] == "what can you do?"
+        bot.work.assert_not_awaited()
+        assert message.reply.return_value.edit.call_args.kwargs["content"] == "Dobby can do things."
+        assert bot.awaiting == {}
+
+    asyncio.run(run())
+
+
+def test_resumed_requests_skip_the_chat_check():
+    import time
+    from bot.main import Followup
+
+    async def run():
+        bot, message = setup()
+        bot.awaiting[(40, 1)] = Followup("title", 555, "delete it", [], {}, time.monotonic() + 60)
+        message.mentions = []
+        message.content = "design review"
+        message.reference = Mock(message_id=555)
+        await Bot.on_message(bot, message)
+        bot.converse.assert_not_awaited()
+        bot.work.assert_awaited_once()
 
     asyncio.run(run())

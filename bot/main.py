@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord import app_commands
 from .calendar import Calendar
+from .chat import Concierge
 from . import format as fmt
 from .config import Config
 from .contacts import Contacts, mask, parse_pairs, valid_email
@@ -146,6 +147,8 @@ class Bot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.calendar = Calendar(config)
         self.planner = Planner(config)
+        # Questions about the bot and off-topic chat live in bot/chat.py, not the planner.
+        self.concierge = Concierge(config, self.planner.client)
         self.contacts = Contacts(config.contacts_file)
         self.scheduler = Scheduler(self.planner, self.calendar, config.timezone, self.contacts)
         # One worker serializes Calendar credential refreshes and conflict checks/writes.
@@ -297,13 +300,15 @@ class Bot(discord.Client):
             )
             return
         self.awaiting.pop((message.channel.id, message.author.id), None)
-        await self.handle_request(message, text)
+        await self.handle_request(message, text, fresh=True)
 
     async def ask(self, message, key, **fields):
         """Post one of Dobby's questions in the channel and return the message to reply to."""
         return await message.reply(say(key, **fields), mention_author=False)
 
-    async def handle_request(self, message, request, history=None, place=None, event_id=None, title=None):
+    async def handle_request(
+        self, message, request, history=None, place=None, event_id=None, title=None, fresh=False
+    ):
         reply = None
         try:
             reply = await message.reply(say("working"), mention_author=False)
@@ -315,6 +320,13 @@ class Bot(discord.Client):
                 history = await self.gather_history(message)
             if place is None:
                 place = describe_place(message.channel)
+            if fresh:
+                # Not a calendar request? Answer in Dobby's voice and stop here.
+                kind, answer = await self.converse(request, history, place)
+                if answer is not None:
+                    log.info("chat_reply kind=%s", kind)
+                    await reply.edit(content=answer[:1900])
+                    return
             if event_id is None:
                 selected = re.search(r"\bevent_id:([a-zA-Z0-9_-]+)", request)
                 event_id = selected.group(1) if selected else None
@@ -462,6 +474,11 @@ class Bot(discord.Client):
         if entry and not entry.used:
             entry.used = True
             await self.finish(entry, say("confirm_expired"))
+
+    async def converse(self, request, history, place):
+        return await asyncio.get_running_loop().run_in_executor(
+            self.executor, self.concierge.respond, request, history, place
+        )
 
     async def gather_history(self, message):
         """Recent same-channel text with author display names, oldest first.
