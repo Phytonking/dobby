@@ -20,6 +20,7 @@ def setup(mention_channels=frozenset({40})):
     bot.member_allowed = AsyncMock(return_value=True)
     bot.mention_reply = Bot.mention_reply.__get__(bot)
     bot.gather_history = Bot.gather_history.__get__(bot)
+    bot.present = AsyncMock()
     bot.take_cooldown.return_value = True
     bot.work = AsyncMock(
         return_value=Proposal(
@@ -88,7 +89,7 @@ def test_context_is_bounded_same_channel_and_excludes_bots():
         assert [row["text"] for row in args[-2]] == ["earlier", "latest"]
         assert all("author" in row for row in args[-2])
         assert args[-1] == {"channel": "general", "thread": None}
-        message.reply.return_value.edit.assert_awaited_once()
+        bot.present.assert_awaited_once()
         message.reply.assert_awaited_once()
 
     asyncio.run(run())
@@ -105,11 +106,11 @@ def test_complete_mention_still_gathers_context_before_planning():
         message.author.send.assert_not_awaited()
         message.reply.assert_awaited_once()
         assert message.reply.call_args.kwargs["mention_author"] is False
-        result = message.reply.return_value.edit.call_args.kwargs
-        assert "Sync" in result["content"]
-        assert result["attachments"][0].filename == "calendar-preview.txt"
-        assert result["view"].owner == message.author.id
-        assert result["view"].origin_channel == message.channel.id
+        reply, content, owner, proposal = bot.present.await_args.args
+        assert reply is message.reply.return_value
+        assert "Sync" in content
+        assert owner == message.author.id
+        assert bot.present.await_args.kwargs == {"mention": True}
 
     asyncio.run(run())
 

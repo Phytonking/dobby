@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
 import json
@@ -55,67 +56,33 @@ def preview(proposal):
     return "\n".join(lines)
 
 
-class Confirmation(discord.ui.View):
-    def __init__(self, bot, owner, proposal, origin_channel=None):
-        super().__init__(timeout=120)
-        self.bot, self.owner, self.proposal = bot, owner, proposal
-        self.used = False
-        self.expires = time.monotonic() + 120
-        self.origin_channel = origin_channel
+CONFIRM, CANCEL = "\U0001f7e2", "\U0001f534"  # green circle, red circle
+CONFIRM_SECONDS = 120
 
-    async def on_error(self, interaction, error, item):
-        log.warning("confirmation_failed type=%s", type(error).__name__)
 
-    async def interaction_check(self, interaction):
-        authorized = False
-        if interaction.user.id == self.owner:
-            if self.origin_channel is None:
-                authorized = self.bot.allowed(interaction)
-            else:
-                await interaction.response.defer()
-                authorized = await self.bot.member_allowed(self.owner, self.origin_channel)
-        if not authorized or self.used or time.monotonic() >= self.expires:
-            send = (
-                interaction.followup.send
-                if interaction.response.is_done()
-                else interaction.response.send_message
-            )
-            await send(say("confirm_unusable"), ephemeral=True)
-            return False
-        return True
+@dataclass
+class PendingConfirmation:
+    """A preview waiting for the requester's reaction. Lives in memory only."""
 
-    @discord.ui.button(label="Confirm calendar change", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction, button):
-        # Set before the first await: repeated clicks cannot issue another write.
-        if self.used:
-            return
-        self.used = True
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
-        try:
-            result = await self.bot.work(self.bot.calendar.apply, self.proposal)
-            text = say({"create": "created", "update": "updated", "delete": "deleted"}[self.proposal.action])
-            if result.get("id"):
-                text += f" Event ID: `{result['id']}`"
-            log.info(
-                "calendar_operation action=%s user=%s guild=%s",
-                self.proposal.action,
-                interaction.user.id,
-                interaction.guild_id,
-            )
-        except Exception as exc:
-            text = self.bot.error(exc) + " " + say("apply_failed_suffix")
-        await interaction.edit_original_response(content=text, attachments=[], view=None)
-        self.stop()
+    owner: int
+    proposal: object
+    channel_id: int
+    message_id: int
+    guild_id: int | None
+    mention: bool  # mention previews also enforce MENTION_CHANNEL_IDS on reauthorization
+    expires: float
+    used: bool = False
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction, button):
-        self.used = True
-        if interaction.response.is_done():
-            await interaction.edit_original_response(content=say("cancelled"), attachments=[], view=None)
-        else:
-            await interaction.response.edit_message(content=say("cancelled"), attachments=[], view=None)
-        self.stop()
+
+def chunks(text, size=1900):
+    parts = []
+    while len(text) > size:
+        cut = text.rfind("\n", 0, size)
+        cut = cut if cut > 0 else size
+        parts.append(text[:cut])
+        text = text[cut:].lstrip("\n")
+    parts.append(text)
+    return parts
 
 
 class Bot(discord.Client):
@@ -126,6 +93,8 @@ class Bot(discord.Client):
         # so message content is always required. Enable the intent in the developer portal.
         intents.guild_messages = True
         intents.message_content = True
+        # Confirmations are reactions on Dobby's own preview message.
+        intents.guild_reactions = True
         super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none(), max_messages=None)
         self.config = config
         self.tree = app_commands.CommandTree(self)
@@ -136,6 +105,8 @@ class Bot(discord.Client):
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.pending = 0
         self.cooldowns = {}
+        self.confirmations = {}
+        self.expiry_tasks = {}
         self.register_commands()
 
     def allowed(self, interaction):
@@ -164,7 +135,7 @@ class Bot(discord.Client):
         self.cooldowns[user_id] = now
         return True
 
-    async def member_allowed(self, user_id, channel_id):
+    async def member_allowed(self, user_id, channel_id, mention=True):
         # Fetch current roles before returning a preview or accepting a confirmation.
         def denied(reason, status=None):
             log.warning(
@@ -176,7 +147,7 @@ class Bot(discord.Client):
             )
             return False
 
-        if not self.config.mentionable(channel_id):
+        if mention and not self.config.mentionable(channel_id):
             return denied("mention_channel_not_allowed")
         guild = self.get_guild(self.config.guild)
         if guild is None:
@@ -232,21 +203,14 @@ class Bot(discord.Client):
             # Recheck access if membership changed during planning.
             if not await self.member_allowed(message.author.id, message.channel.id):
                 raise UserError("Your calendar access is no longer authorized.")
-            content = preview(proposal)
-            content += "\n" + say("context_used", count=len(history))
-            await reply.edit(
-                content=content
-                if len(content) <= 1900
-                else "Dobby has attached the preview. Please check it before confirming!",
-                attachments=[discord.File(io.BytesIO(content.encode()), filename="calendar-preview.txt")],
-                view=Confirmation(self, message.author.id, proposal, message.channel.id),
-            )
+            content = preview(proposal) + "\n" + say("context_used", count=len(history))
+            await self.present(reply, content, message.author.id, proposal, mention=True)
         except discord.Forbidden:
             log.warning("mention_reply_forbidden channel=%s", message.channel.id)
             text = say("permission_missing")
             if reply:
                 try:
-                    await reply.edit(content=text, attachments=[], view=None)
+                    await reply.edit(content=text)
                 except discord.HTTPException:
                     await self.mention_reply(message, text)
             else:
@@ -255,11 +219,87 @@ class Bot(discord.Client):
             text = self.error(exc)
             if reply:
                 try:
-                    await reply.edit(content=text, attachments=[], view=None)
+                    await reply.edit(content=text)
                 except discord.HTTPException:
                     await self.mention_reply(message, text)
             else:
                 await self.mention_reply(message, text)
+
+    async def present(self, reply, content, owner, proposal, mention):
+        """Edit Dobby's placeholder into the full inline preview, then arm 🟢/🔴 on it."""
+        first, *rest = chunks(content + "\n" + say("confirm_instructions"))
+        await reply.edit(content=first)
+        for part in rest:
+            await reply.channel.send(part)
+        for emoji in (CONFIRM, CANCEL):
+            await reply.add_reaction(emoji)
+        entry = PendingConfirmation(
+            owner=owner,
+            proposal=proposal,
+            channel_id=reply.channel.id,
+            message_id=reply.id,
+            guild_id=getattr(getattr(reply, "guild", None), "id", None),
+            mention=mention,
+            expires=time.monotonic() + CONFIRM_SECONDS,
+        )
+        self.confirmations[reply.id] = entry
+        self.expiry_tasks[reply.id] = asyncio.get_running_loop().create_task(self.expire_after(reply.id))
+
+    async def on_raw_reaction_add(self, payload):
+        entry = self.confirmations.get(payload.message_id)
+        if entry is None or (self.user and payload.user_id == self.user.id):
+            return
+        emoji = str(payload.emoji)
+        if emoji not in (CONFIRM, CANCEL) or payload.user_id != entry.owner:
+            return
+        if entry.used or time.monotonic() >= entry.expires:
+            return
+        # Set before the first await: a second reaction cannot issue another write.
+        entry.used = True
+        if not await self.member_allowed(entry.owner, entry.channel_id, mention=entry.mention):
+            text = say("confirm_unusable")
+        elif emoji == CANCEL:
+            text = say("cancelled")
+        else:
+            try:
+                result = await self.work(self.calendar.apply, entry.proposal)
+                text = say(
+                    {"create": "created", "update": "updated", "delete": "deleted"}[entry.proposal.action]
+                )
+                if result.get("id"):
+                    text += f" Event ID: `{result['id']}`"
+                log.info(
+                    "calendar_operation action=%s user=%s guild=%s",
+                    entry.proposal.action,
+                    payload.user_id,
+                    entry.guild_id,
+                )
+            except Exception as exc:
+                text = self.error(exc) + " " + say("apply_failed_suffix")
+        await self.finish(entry, text)
+
+    async def finish(self, entry, text):
+        self.confirmations.pop(entry.message_id, None)
+        task = self.expiry_tasks.pop(entry.message_id, None)
+        if task and task is not asyncio.current_task():
+            task.cancel()
+        try:
+            channel = self.get_channel(entry.channel_id) or await self.fetch_channel(entry.channel_id)
+            message = channel.get_partial_message(entry.message_id)
+            await message.edit(content=text)
+            try:
+                await message.clear_reactions()
+            except discord.HTTPException:
+                pass  # Needs Manage Messages; the entry is already retired.
+        except discord.HTTPException as exc:
+            log.warning("confirmation_edit_failed status=%s", exc.status)
+
+    async def expire_after(self, message_id):
+        await asyncio.sleep(CONFIRM_SECONDS)
+        entry = self.confirmations.get(message_id)
+        if entry and not entry.used:
+            entry.used = True
+            await self.finish(entry, say("confirm_expired"))
 
     async def gather_history(self, message):
         """Recent same-channel text with author display names, oldest first.
@@ -332,16 +372,8 @@ class Bot(discord.Client):
                 return
             try:
                 proposal = await self.work(self.scheduler.prepare, request, event_id, interaction.id)
-                content = preview(proposal)
-                # Full preview is always reviewable even for unusually long existing titles.
-                attachment = discord.File(io.BytesIO(content.encode()), filename="calendar-preview.txt")
-                await interaction.edit_original_response(
-                    content=content
-                    if len(content) <= 1900
-                    else "Dobby has attached the calendar preview. Please review it before confirming!",
-                    attachments=[attachment],
-                    view=Confirmation(self, interaction.user.id, proposal),
-                )
+                reply = await interaction.original_response()
+                await self.present(reply, preview(proposal), interaction.user.id, proposal, mention=False)
             except Exception as exc:
                 await interaction.edit_original_response(content=self.error(exc))
 
@@ -420,6 +452,8 @@ class Bot(discord.Client):
         log.warning("discord_event_failed event=%s", event_method)
 
     async def close(self):
+        for task in self.expiry_tasks.values():
+            task.cancel()
         await super().close()
         self.executor.shutdown(wait=True)
         self.calendar.session.close()

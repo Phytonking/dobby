@@ -89,7 +89,7 @@ On Pi/Linux, edit `.env` and set `DOBBY_UID` and `DOBBY_GID` to the two IDs that
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application named **Dobby**. Set the bot username or server nickname to **Dobby**.
 2. Obtain its bot token and put it in local `.env` as `DISCORD_TOKEN`.
 3. Enable **Message Content Intent** — it is required for mention and context requests. No Presence or Server Members privileged intent is needed. Leave Interactions Endpoint URL empty.
-4. Invite with `bot` and `applications.commands` OAuth scopes. Grant **View Channels**, **Send Messages**, **Send Messages in Threads**, **Read Message History**, and **Attach Files** in scheduling channels. Do not grant Administrator or Manage Roles.
+4. Invite with `bot` and `applications.commands` OAuth scopes. Grant **View Channels**, **Send Messages**, **Send Messages in Threads**, **Read Message History**, **Add Reactions**, and **Attach Files** (for `/events`) in scheduling channels. **Manage Messages** is optional and only lets Dobby clear the 🟢/🔴 reactions after you choose. Do not grant Administrator or Manage Roles.
 5. Enable Discord Developer Mode and copy the server, scheduler role, and scheduling text channel IDs into `.env`:
 
 ```dotenv
@@ -191,7 +191,7 @@ Ask for the scheduler role and use a channel or thread Dobby is allowed in. Type
 @Dobby schedule a Planning meeting tomorrow at 10am for 45 minutes
 ```
 
-The first request defaults to one hour. Times use the team timezone unless you specify another. Review the preview in the channel or thread, then click **Confirm calendar change** to save it, or **Cancel** to discard it. No write occurs before confirmation. If details are missing, send a new complete request in the channel; Dobby does not keep an ongoing conversation or send DMs.
+The first request defaults to one hour. Times use the team timezone unless you specify another. Review the preview in the channel or thread. Dobby puts 🟢 and 🔴 reactions on its own preview message: react 🟢 to save the change or 🔴 to discard it. The full details are in the message itself, never in an attached file. No write occurs before confirmation. If details are missing, send a new complete request in the channel; Dobby does not keep an ongoing conversation or send DMs.
 
 ### Turn a discussion into a meeting
 
@@ -305,7 +305,7 @@ The optional Pi timer checks every five minutes and recreates the container when
 | Bot starts but commands missing | Confirm `DISCORD_GUILD_ID`; commands sync to that one server on `bot_ready` |
 | Gateway 4014 | Enable Message Content Intent in the developer portal; it is always required |
 | Mention ignored | Actual mention, allowed role, correct text channel/server, ten-second cooldown |
-| Channel preview unavailable | Grant Send Messages, Send Messages in Threads, and Attach Files in the requesting channel |
+| Channel preview unavailable | Grant Send Messages, Send Messages in Threads, and Add Reactions in the requesting channel |
 | Context inaccessible | Bot and requester need View Channel and Read Message History |
 | Google auth expires | Relink Testing-mode OAuth and recreate container |
 | Gemini fails | Check key, model and quota; there is no paid fallback |
