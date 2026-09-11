@@ -462,7 +462,8 @@ class Bot(discord.Client):
                 text += "\n\n**Event:** " + plain_title(event_label(event, self.config.timezone))
                 if entry.proposal.action == "update":
                     diff = fmt.changes(entry.proposal.existing, entry.proposal.body, self.config.timezone)
-                    text += "\n**Changed:**\n" + "\n".join(f"• {plain_title(line)}" for line in diff)
+                    rows = [f"• {plain_title(line)}" for line in diff] or ["• (no visible change)"]
+                    text += "\n**Changed:**\n" + "\n".join(rows)
                 log.info(
                     "calendar_operation action=%s user=%s guild=%s",
                     entry.proposal.action,

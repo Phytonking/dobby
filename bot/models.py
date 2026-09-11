@@ -62,9 +62,18 @@ def place_name(place):
 
 
 def titled(prefix, summary):
-    """Every event title reads "<thread or channel> | <event name>"; never prefix twice."""
+    """Every event title reads "<thread or channel> | <event name>"; never prefix twice.
+
+    A thread named after the meeting itself ("Design review" in thread "Design review")
+    stays a single "Design review", and an already doubled "X | X" collapses back to "X".
+    """
     summary = " ".join(str(summary or "").split())
-    if not prefix or not summary or summary.lower().startswith(prefix.lower() + TITLE_SEPARATOR):
+    parts = summary.split(TITLE_SEPARATOR)
+    if len(parts) == 2 and parts[0].strip().lower() == parts[1].strip().lower():
+        summary = parts[0].strip()
+    if not prefix or not summary or TITLE_SEPARATOR in summary:
+        return summary
+    if summary.lower() == prefix.lower():
         return summary
     return f"{prefix}{TITLE_SEPARATOR}{summary}"[:200]
 
@@ -90,6 +99,11 @@ def event_body(plan, existing, zone, emails=(), place=None):
     }
     if "summary" in body:
         body["summary"] = titled(place_name(place), body["summary"])
+    if plan.action == "update" and existing:
+        # Gemini often echoes fields it did not change; only real differences are sent.
+        for key in ("summary", "description", "location"):
+            if key in body and body[key] == existing.get(key):
+                del body[key]
     if plan.action == "create" or plan.start is not None or plan.end is not None:
         start = plan.start or (existing or {}).get("start", {}).get("dateTime")
         end = plan.end or (existing or {}).get("end", {}).get("dateTime")
@@ -107,10 +121,13 @@ def event_body(plan, existing, zone, emails=(), place=None):
             except KeyError, ValueError, TypeError:
                 raise UserError("Could not determine the original meeting duration.") from None
         a, b = interval(start, end)
-        body.update(
-            start={"dateTime": a.astimezone(ZoneInfo(zone)).isoformat(), "timeZone": zone},
-            end={"dateTime": b.astimezone(ZoneInfo(zone)).isoformat(), "timeZone": zone},
-        )
+        if plan.action == "update" and existing and same_span(existing, a, b):
+            pass  # asked to move a meeting to where it already is
+        else:
+            body.update(
+                start={"dateTime": a.astimezone(ZoneInfo(zone)).isoformat(), "timeZone": zone},
+                end={"dateTime": b.astimezone(ZoneInfo(zone)).isoformat(), "timeZone": zone},
+            )
     if emails:
         # PATCH replaces the whole attendee array, so merge with existing guests.
         current = [a for a in (existing or {}).get("attendees", []) if a.get("email")]
@@ -119,5 +136,17 @@ def event_body(plan, existing, zone, emails=(), place=None):
         if added or plan.action == "create":
             body["attendees"] = current + added
     if not body:
-        raise UserError("No changes were requested.")
+        raise UserError(
+            "Nothing would change: the meeting already has those details. "
+            "Say what should be different, for example the new time or title."
+        )
     return body
+
+
+def same_span(existing, start, end):
+    try:
+        old_start = datetime.fromisoformat(existing["start"]["dateTime"])
+        old_end = datetime.fromisoformat(existing["end"]["dateTime"])
+    except KeyError, TypeError, ValueError:
+        return False
+    return old_start == start and old_end == end

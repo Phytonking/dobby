@@ -47,6 +47,12 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 - Cause: the email-reply branch of `on_message` had no error handling, so any exception (in the field, `PermissionError` writing `data/contacts.json` from a root-owned bind mount) surfaced only as `discord_event_failed event=on_message`.
 - Fix: follow-up handling moved into `Bot.route()` and wrapped so failures are reported in the channel; a failed save no longer blocks the meeting (emails from the conversation are passed to `Scheduler.prepare(..., emails=...)` and win over the memory file, with a `contact_not_saved` notice); startup and `--check` now verify the data directory is writable (`check_data_dir`).
 
+## Bug fix: doubled titles and empty "Changed:" lists (2026-09-11)
+
+- `titled()` no longer prefixes a title that equals the thread name, and collapses an existing "X | X" back to "X".
+- `event_body()` drops fields Gemini echoed unchanged (title, description, location, identical time span) so the diff shows only real changes; if nothing is left it raises "Nothing would change…" instead of sending a no-op PATCH.
+- Confirmations print "(no visible change)" rather than an empty list.
+
 ## Deviations and notes
 
 - The first commit also removed `ComprehensiveTest.txt`; it was already deleted in the working tree before work started, and `git add -A` staged it.

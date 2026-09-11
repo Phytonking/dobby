@@ -64,7 +64,7 @@ def test_invitees_become_attendees_and_updates_merge_existing_guests(existing):
     assert body["attendees"] == [{"email": "a@x.com"}]
     body = event_body(Plan(action="update"), existing, "UTC", ["Team@example.com", "b@x.com", "b@x.com"])
     assert body["attendees"] == [{"email": "team@example.com"}, {"email": "b@x.com"}]
-    with pytest.raises(UserError, match="No changes"):
+    with pytest.raises(UserError, match="Nothing would change"):
         event_body(Plan(action="update"), existing, "UTC", ["team@example.com"])
 
 
@@ -284,3 +284,29 @@ def test_emails_supplied_in_conversation_beat_the_memory_file():
     scheduler = Scheduler(planner, calendar, "UTC")
     proposal = scheduler.prepare("invite", None, 1, emails={"maya": "maya@x.com", "Bob": "bob@x.com"})
     assert proposal.attendees == ("maya@x.com", "bob@x.com")
+
+
+def test_thread_named_after_the_meeting_does_not_double_the_title():
+    from bot.models import titled
+
+    name = "Event Logistics + Planning Checklist / brief"
+    assert titled(name, name) == name
+    assert titled(name, f"{name} | {name}") == name
+    assert titled("planning", "planning | Sync") == "planning | Sync"
+    assert titled("planning", "Sync") == "planning | Sync"
+
+
+def test_update_drops_echoed_fields_and_rejects_no_op_changes(existing):
+    same = existing["summary"]
+    body = event_body(
+        Plan(action="update", summary=same, description="Keep me", location="Room"), existing, "UTC"
+    )
+    assert body == {"location": "Room"}
+    with pytest.raises(UserError, match="Nothing would change"):
+        event_body(Plan(action="update", summary=same, description="Keep me"), existing, "UTC")
+    start, end = existing["start"]["dateTime"], existing["end"]["dateTime"]
+    with pytest.raises(UserError, match="Nothing would change"):
+        event_body(Plan(action="update", start=start, end=end), existing, "UTC")
+    moved = (datetime.fromisoformat(start) + timedelta(hours=2)).isoformat()
+    body = event_body(Plan(action="update", summary=same, start=moved), existing, "UTC")
+    assert set(body) == {"start", "end"}
