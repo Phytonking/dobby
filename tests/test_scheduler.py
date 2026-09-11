@@ -103,12 +103,26 @@ def test_titles_are_prefixed_with_the_thread_or_channel_once():
     body = event_body(
         Plan(action="create", summary=" Design  review ", start=start, end=end), None, "UTC", (), thread
     )
-    assert body["summary"] == "Q4 launch prep | Design review"
+    assert body["summary"] == "Q4 launch | Design review"
     body = event_body(
         Plan(action="create", summary="q4 launch prep | Design review", start=start), None, "UTC", (), thread
     )
     assert body["summary"] == "q4 launch prep | Design review"
     assert place_name({"channel": "general", "thread": None}) == "general"
+    long = {"channel": "planning", "thread": "Event Logistics + Planning Checklist / brief"}
+    assert place_name(long, "Logistics") == "Logistics"
+    assert place_name(long, " event  logistics ") == "event logistics"
+    assert place_name(long, None) == "Event Logistics"
+    assert place_name(long, "Event Logistics + Planning Checklist / brief") == "Event Logistics"
+    assert place_name({"channel": "general", "thread": None}, "Something Else") == "general"
+    body = event_body(
+        Plan(action="create", summary="Kickoff", start=start, end=end, place_label="Logistics"),
+        None,
+        "UTC",
+        (),
+        long,
+    )
+    assert body["summary"] == "Logistics | Kickoff"
     assert titled("", "Sync") == "Sync" and titled("general", "") == ""
     body = event_body(
         Plan(action="update", summary="Renamed"), {"etag": "x"}, "UTC", (), {"channel": "general"}

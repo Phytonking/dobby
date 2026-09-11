@@ -25,6 +25,8 @@ class Plan(BaseModel):
     invitees: list[str] = Field(default_factory=list, max_length=20)
     # For update/delete without a selected event: the meeting the user means.
     target_title: str | None = Field(default=None, max_length=200)
+    # One- or two-word label for a multi-word thread/channel name, used as the title prefix.
+    place_label: str | None = Field(default=None, max_length=40)
 
 
 def is_editable(event):
@@ -55,10 +57,27 @@ def interval(start, end):
 TITLE_SEPARATOR = " | "
 
 
-def place_name(place):
-    """The thread name when the request came from a thread, otherwise the channel name."""
+MAX_LABEL_WORDS = 2
+
+
+def concise(text, limit=MAX_LABEL_WORDS):
+    """At most `limit` words, punctuation trimmed; '' when nothing usable is left."""
+    words = [w.strip("|/\\-–—:;,.!?()[]{}\"'`#*_~") for w in str(text or "").split()]
+    words = [w for w in words if w]
+    return " ".join(words[:limit])
+
+
+def place_name(place, label=None):
+    """Prefix for titles: the thread name (or channel name) when it is a single word,
+    otherwise Gemini's short label for it, otherwise its first words."""
     place = place or {}
-    return " ".join(str(place.get("thread") or place.get("channel") or "").split())
+    raw = " ".join(str(place.get("thread") or place.get("channel") or "").split())
+    if len(raw.split()) <= 1:
+        return raw
+    short = concise(label)
+    if short and len(short) <= 30 and short.lower() != raw.lower():
+        return short
+    return concise(raw)
 
 
 def titled(prefix, summary):
@@ -98,7 +117,7 @@ def event_body(plan, existing, zone, emails=(), place=None):
         k: getattr(plan, k) for k in ("summary", "description", "location") if getattr(plan, k) is not None
     }
     if "summary" in body:
-        body["summary"] = titled(place_name(place), body["summary"])
+        body["summary"] = titled(place_name(place, plan.place_label), body["summary"])
     if plan.action == "update" and existing:
         # Gemini often echoes fields it did not change; only real differences are sent.
         for key in ("summary", "description", "location"):

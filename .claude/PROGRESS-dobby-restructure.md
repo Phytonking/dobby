@@ -53,6 +53,10 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 - `event_body()` drops fields Gemini echoed unchanged (title, description, location, identical time span) so the diff shows only real changes; if nothing is left it raises "Nothing would change…" instead of sending a no-op PATCH.
 - Confirmations print "(no visible change)" rather than an empty list.
 
+## Follow-up change: concise title prefixes
+
+- `Plan.place_label`: the planner returns a one- or two-word label when the thread/channel name is longer than one word (no extra Gemini call). `models.place_name(place, label)` uses the raw name if it is a single word, else the label (validated to ≤ 2 words / 30 chars), else the first two words of the raw name. The planner is also told to keep `summary` to six words at most.
+
 ## Deviations and notes
 
 - The first commit also removed `ComprehensiveTest.txt`; it was already deleted in the working tree before work started, and `git add -A` staged it.

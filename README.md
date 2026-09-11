@@ -193,7 +193,7 @@ Ask for the scheduler role and use a channel or thread Dobby is allowed in. Type
 @Dobby schedule a Planning meeting tomorrow at 10am for 45 minutes
 ```
 
-The first request defaults to one hour. Times use the team timezone unless you specify another. Dobby replies with a preview (bold **Title**, **When**, **Location**, **Invitees** lines) and puts 🟢 and 🔴 reactions on it: react 🟢 to save or 🔴 to discard. Nothing is written before you confirm. Every event is titled `<thread or channel name> | <event name>`, and the confirmation names the event and its month/day instead of an ID. If a date or time is missing, send a new complete request. Dobby only keeps a conversation going for its own questions (a missing email, the meeting title, or which of several matches you meant), and only for five minutes. Dobby never sends DMs.
+The first request defaults to one hour. Times use the team timezone unless you specify another. Dobby replies with a preview (bold **Title**, **When**, **Location**, **Invitees** lines) and puts 🟢 and 🔴 reactions on it: react 🟢 to save or 🔴 to discard. Nothing is written before you confirm. Every event is titled `<place> | <event name>`, where the place is the thread (or channel) name when it is one word and a one- or two-word label Gemini derives from it otherwise, so titles stay short. The confirmation names the event and its month/day instead of an ID. If a date or time is missing, send a new complete request. Dobby only keeps a conversation going for its own questions (a missing email, the meeting title, or which of several matches you meant), and only for five minutes. Dobby never sends DMs.
 
 ### Turn a discussion into a meeting
 
