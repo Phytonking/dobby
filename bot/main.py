@@ -118,6 +118,7 @@ class Followup:
     place: dict
     expires: float
     names: list = field(default_factory=list)  # emails still needed
+    emails: dict = field(default_factory=dict)  # name -> email supplied so far
     candidates: list = field(default_factory=list)  # event IDs offered for "choose"
 
 
@@ -257,15 +258,32 @@ class Bot(discord.Client):
             await self.mention_reply(message, say("cooldown"))
             return
         text = re.sub(rf"<@!?{self.user.id}>", "", message.content).strip()
+        try:
+            await self.route(message, text, followup)
+        except Exception as exc:
+            # A failure while answering Dobby's own question must reach the user, not the log only.
+            self.awaiting.pop((message.channel.id, message.author.id), None)
+            await self.mention_reply(message, self.error(exc))
+
+    async def route(self, message, text, followup):
         if followup is not None and followup.kind == "emails":
             pairs = parse_pairs(text, followup.names)
             if not pairs:
                 await self.mention_reply(message, say("contact_invalid_email"))
                 return
             for name, email in pairs.items():
-                self.contacts.save(name, email, added_by=message.author.id)
+                followup.emails[name] = email
                 followup.names.remove(name)
-                await self.mention_reply(message, say("contact_saved", name=name))
+                try:
+                    self.contacts.save(name, email, added_by=message.author.id)
+                    saved = True
+                except (OSError, ValueError) as exc:
+                    # Keep the email for this request even when the memory file is unwritable.
+                    log.warning("contact_save_failed type=%s path=%s", type(exc).__name__, self.contacts.path)
+                    saved = False
+                await self.mention_reply(
+                    message, say("contact_saved" if saved else "contact_not_saved", name=name)
+                )
             if followup.names:
                 followup.prompt_id = (
                     await self.ask(message, "ask_email", names=", ".join(followup.names))
@@ -273,7 +291,9 @@ class Bot(discord.Client):
                 followup.expires = time.monotonic() + FOLLOWUP_SECONDS
                 return
             self.awaiting.pop((message.channel.id, message.author.id), None)
-            await self.handle_request(message, followup.request, followup.history, followup.place)
+            await self.handle_request(
+                message, followup.request, followup.history, followup.place, emails=followup.emails
+            )
             return
         if followup is not None and followup.kind == "title":
             if not text:
@@ -307,7 +327,7 @@ class Bot(discord.Client):
         return await message.reply(say(key, **fields), mention_author=False)
 
     async def handle_request(
-        self, message, request, history=None, place=None, event_id=None, title=None, fresh=False
+        self, message, request, history=None, place=None, event_id=None, title=None, fresh=False, emails=None
     ):
         reply = None
         try:
@@ -333,7 +353,7 @@ class Bot(discord.Client):
             key = (message.channel.id, message.author.id)
             try:
                 proposal = await self.work(
-                    self.scheduler.prepare, request, event_id, message.id, history, place, title
+                    self.scheduler.prepare, request, event_id, message.id, history, place, title, emails
                 )
             except NeedTitle:
                 await reply.edit(content=say("ask_title"))
@@ -368,6 +388,7 @@ class Bot(discord.Client):
                     place=place,
                     expires=time.monotonic() + FOLLOWUP_SECONDS,
                     names=list(exc.names),
+                    emails=dict(emails or {}),
                 )
                 return
             # Recheck access if membership changed during planning.
@@ -721,6 +742,23 @@ def check_token_file(config):
         )
 
 
+def check_data_dir(config):
+    """Contacts live here; a root-owned bind mount is the usual reason writes fail in Docker."""
+    path = config.data_dir
+    probe = os.path.join(path, ".write-test")
+    try:
+        os.makedirs(path, exist_ok=True)
+        with open(probe, "w", encoding="utf-8") as stream:
+            stream.write("ok")
+        os.remove(probe)
+    except OSError as exc:
+        raise ConfigError(
+            f"Data directory {path} is not writable ({type(exc).__name__}). Dobby stores contacts.json there. "
+            "Create the folder before the first `docker compose up` and make it owned by DOBBY_UID/DOBBY_GID "
+            "(on Pi: mkdir -p data && chown $(id -u):$(id -g) data), then recreate the container."
+        ) from None
+
+
 def main(argv=None):
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(message)s")
     log.setLevel(logging.INFO)
@@ -728,6 +766,7 @@ def main(argv=None):
     try:
         config = Config.load()
         check_token_file(config)
+        check_data_dir(config)
     except ConfigError as exc:
         # Authored text with no credential values, so it is safe to show the operator.
         log.error("startup_failed: %s", exc)
@@ -738,11 +777,12 @@ def main(argv=None):
         raise SystemExit(1) from None
     if check_only:
         log.info(
-            "config_ok guild=%s timezone=%s model=%s mention_channels=%d",
+            "config_ok guild=%s timezone=%s model=%s mention_channels=%d data_dir=%s",
             config.guild,
             config.timezone,
             config.model,
             len(config.mention_channels),
+            config.data_dir,
         )
         return
     try:

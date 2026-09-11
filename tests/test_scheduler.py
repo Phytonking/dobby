@@ -273,3 +273,14 @@ def test_stale_event_rejected():
     calendar.session.request.return_value = Mock(status_code=412)
     with pytest.raises(UserError, match="changed since"):
         calendar.call("PATCH", "abc")
+
+
+def test_emails_supplied_in_conversation_beat_the_memory_file():
+    planner, calendar = Mock(), Mock()
+    start, end = times()
+    planner.plan.return_value = Plan(
+        action="create", summary="Sync", start=start, end=end, invitees=["Maya", "Bob"]
+    )
+    scheduler = Scheduler(planner, calendar, "UTC")
+    proposal = scheduler.prepare("invite", None, 1, emails={"maya": "maya@x.com", "Bob": "bob@x.com"})
+    assert proposal.attendees == ("maya@x.com", "bob@x.com")

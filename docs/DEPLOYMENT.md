@@ -22,8 +22,8 @@ sudo chown "$(id -u):$(id -g)" /opt/dobby
 git clone https://github.com/YOUR_OWNER/YOUR_REPO.git /opt/dobby
 cd /opt/dobby
 cp .env.example .env
-mkdir -p secrets
-chmod 700 secrets
+mkdir -p secrets data
+chmod 700 secrets data
 chmod 600 .env
 id -u
 id -g

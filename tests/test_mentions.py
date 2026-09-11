@@ -26,6 +26,7 @@ def setup(mention_channels=frozenset({40})):
     bot.ask = Bot.ask.__get__(bot)
     bot.awaiting = {}
     bot.contacts = Mock()
+    bot.route = Bot.route.__get__(bot)
     bot.converse = AsyncMock(return_value=("schedule", None))
     bot.present = AsyncMock()
     bot.take_cooldown.return_value = True
@@ -520,5 +521,50 @@ def test_resumed_requests_skip_the_chat_check():
         await Bot.on_message(bot, message)
         bot.converse.assert_not_awaited()
         bot.work.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_email_reply_still_books_the_meeting_when_the_memory_file_is_unwritable():
+    import time
+    from bot.main import Followup
+
+    async def run():
+        bot, message = setup()
+        bot.error = Bot.error
+        bot.contacts.save.side_effect = PermissionError("read-only")
+        bot.awaiting[(40, 1)] = Followup(
+            "emails", 555, "invite Maya", [], {}, time.monotonic() + 60, ["Maya"]
+        )
+        message.mentions = []
+        message.content = "maya@example.com"
+        message.reference = Mock(message_id=555)
+        await Bot.on_message(bot, message)
+        assert "could not" in message.reply.call_args_list[0].args[0]
+        bot.work.assert_awaited_once()
+        assert bot.work.call_args.args[-1] == {"Maya": "maya@example.com"}
+        bot.present.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_failures_while_answering_dobby_are_reported_not_swallowed():
+    import time
+    from bot.main import Followup
+
+    async def run():
+        bot, message = setup()
+        bot.error = Bot.error
+        bot.awaiting[(40, 1)] = Followup(
+            "emails", 555, "invite Maya", [], {}, time.monotonic() + 60, ["Maya"]
+        )
+        bot.contacts.save.side_effect = RuntimeError("boom")
+        bot.handle_request = AsyncMock(side_effect=RuntimeError("boom"))
+        message.mentions = []
+        message.content = "maya@example.com"
+        message.reference = Mock(message_id=555)
+        await Bot.on_message(bot, message)  # must not raise
+        assert (40, 1) not in bot.awaiting
+        assert "could not complete" in message.reply.call_args.args[0]
 
     asyncio.run(run())

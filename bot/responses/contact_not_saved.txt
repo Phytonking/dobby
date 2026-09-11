@@ -1,0 +1,20 @@
+Dobby will use {name}'s email for this meeting, but could not write it to memory. Dobby's data folder is not writable; please tell the administrator.
+Dobby has {name}'s email for now, but Dobby's memory file would not open. Dobby will use it today and forget it after; ask the administrator to check the data folder.
+Dobby could not save {name} for next time (the data folder refused Dobby). Dobby will still invite them now.
+Dobby will invite {name}, but Dobby's memory is broken today: the data folder is not writable.
+Dobby holds {name}'s email in his head for this meeting. Saving it failed; the administrator should check the data folder permissions.
+Dobby could not remember {name} permanently. The data folder would not let Dobby write. Dobby will still use the email now.
+Dobby noted {name} for this request only. Dobby's memory file cannot be written; please ask the administrator.
+For today, Dobby knows {name}. For tomorrow, Dobby's memory needs a writable data folder. Dobby is sorry!
+Dobby will invite {name} now, but Dobby could not save them. Dobby's data folder is read-only.
+Dobby kept {name}'s email for this meeting, but the memory file would not save. Please check the data folder.
+Dobby has {name}'s email just for now. Saving failed; the administrator should look at DOBBY_UID and the data folder.
+Dobby could not write {name} into memory. Dobby will proceed with this meeting all the same.
+Dobby is using {name}'s email for this request, but Dobby's memory file refused to be written.
+Dobby will remember {name} only until this meeting is booked. The data folder is not writable, sorry!
+Dobby tried to save {name} and the data folder said no. Dobby continues with the meeting regardless.
+Dobby cannot keep {name} in memory today; the data folder is not writable. Dobby still has the email for this meeting.
+Dobby holds {name}'s email for this one meeting. Please have the administrator make Dobby's data folder writable.
+Dobby knows {name} for now. The memory file could not be written, so Dobby will ask again next time.
+Dobby will use {name}'s email today but could not save it. Dobby's data folder needs fixing.
+Dobby could not store {name}. Dobby's memory file is unwritable, but this meeting will still get the invitation.

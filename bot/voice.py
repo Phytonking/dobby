@@ -23,6 +23,7 @@ FIELDS = {
     "ask_email": {"names"},
     "contact_saved": {"name"},
     "contact_removed": {"name"},
+    "contact_not_saved": {"name"},
     "contact_unknown": {"name"},
     "no_matching_event": {"title"},
     "confirm_event_match": {"title", "start"},
@@ -66,6 +67,10 @@ FALLBACK = {
     "contact_saved": "Dobby has remembered {name}'s email. Dobby never forgets a friend!",
     "contact_invalid_email": "Dobby could not find an email address in that. Try `Name: name@example.com`.",
     "contact_removed": "Dobby has forgotten {name}'s email, as you asked.",
+    "contact_not_saved": (
+        "Dobby will use {name}'s email for this meeting, but could not write it to memory. "
+        "Dobby's data folder is not writable; please tell the administrator."
+    ),
     "contact_unknown": "Dobby has no saved email for {name}.",
     "contacts_empty": "Dobby has not learned any emails yet.",
     "contacts_list_intro": "Here are the people Dobby knows, if you please:",

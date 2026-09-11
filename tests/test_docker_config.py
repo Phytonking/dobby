@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from bot.config import Config
-from bot.main import check_token_file
+from bot.main import check_data_dir, check_token_file
 from bot.models import ConfigError
 from scripts.link_google import main
 
@@ -101,3 +101,12 @@ def test_token_file_problems_are_reported_before_discord_login(tmp_path):
         assert "refresh_token_value" not in str(caught.value)
 
     check_token_file(SimpleNamespace(token_file=str(complete)))
+
+
+def test_data_dir_is_created_and_must_be_writable(tmp_path):
+    check_data_dir(SimpleNamespace(data_dir=str(tmp_path / "data")))
+    assert (tmp_path / "data").is_dir() and not list((tmp_path / "data").iterdir())
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    with pytest.raises(ConfigError, match="not writable"):
+        check_data_dir(SimpleNamespace(data_dir=str(blocker)))

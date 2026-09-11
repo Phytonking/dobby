@@ -334,7 +334,7 @@ The optional Pi timer checks every five minutes and recreates the container when
 | Channel preview unavailable | Grant Send Messages, Send Messages in Threads, and Add Reactions in the requesting channel |
 | Context inaccessible | Bot and requester need View Channel and Read Message History |
 | Reactions do nothing | Only the requester within two minutes; bot needs Add Reactions; look for `mention_access_denied` in the logs |
-| Contacts not remembered | `data/` must exist and be writable by `DOBBY_UID`; rerun `python scripts/bootstrap.py` or `mkdir data` and recreate the container |
+| Contacts not remembered, or Dobby goes quiet after you send an email | `data/` must exist and be writable by `DOBBY_UID` (a root-owned folder Docker created is the usual cause). `mkdir -p data`, `chown` it to your UID/GID, recreate the container; step 5's `--check` now tests this |
 | Google auth expires | Relink Testing-mode OAuth and recreate container |
 | Gemini fails | Check key, model and quota; there is no paid fallback |
 | Old preview fails | Restart/update, expiry, permission change or stale event; request another preview |

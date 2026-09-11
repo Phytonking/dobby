@@ -42,6 +42,11 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 - Chat replies end with a line from the new `farewell` pool ("Dobby is going now…") and create no follow-up state. New pools: `capabilities_intro`, `chat_fallback`, `farewell`.
 - `main.py` changes are limited to constructing the concierge, a `converse()` executor hop, and one check in `handle_request` for fresh mentions (`fresh=True`); resumed follow-ups skip it.
 
+## Bug fix: Dobby went quiet after being given an email (2026-09-11)
+
+- Cause: the email-reply branch of `on_message` had no error handling, so any exception (in the field, `PermissionError` writing `data/contacts.json` from a root-owned bind mount) surfaced only as `discord_event_failed event=on_message`.
+- Fix: follow-up handling moved into `Bot.route()` and wrapped so failures are reported in the channel; a failed save no longer blocks the meeting (emails from the conversation are passed to `Scheduler.prepare(..., emails=...)` and win over the memory file, with a `contact_not_saved` notice); startup and `--check` now verify the data directory is writable (`check_data_dir`).
+
 ## Deviations and notes
 
 - The first commit also removed `ComprehensiveTest.txt`; it was already deleted in the working tree before work started, and `git add -A` staged it.

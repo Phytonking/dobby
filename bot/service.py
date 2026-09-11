@@ -59,15 +59,23 @@ class Scheduler:
         self.planner, self.calendar, self.timezone = planner, calendar, timezone
         self.contacts = contacts
 
-    def resolve_invitees(self, names):
+    def resolve_invitees(self, names, known=None):
+        """Emails the requester just supplied (`known`) win over the memory file."""
         if not names:
             return {}, []
+        supplied = {" ".join(str(k).split()).lower(): v for k, v in (known or {}).items()}
+        found = {
+            n: supplied[" ".join(n.split()).lower()] for n in names if " ".join(n.split()).lower() in supplied
+        }
+        rest = [n for n in names if n not in found]
         if self.contacts is None:
-            emails = {n: n for n in names if "@" in n}
-            return emails, [n for n in names if n not in emails]
-        return self.contacts.lookup(names)
+            found.update({n: n for n in rest if "@" in n})
+            return found, [n for n in rest if n not in found]
+        more, missing = self.contacts.lookup(rest)
+        found.update(more)
+        return found, missing
 
-    def prepare(self, request, event_id, interaction_id, history=None, place=None, title=None):
+    def prepare(self, request, event_id, interaction_id, history=None, place=None, title=None, emails=None):
         if event_id and not re.fullmatch(r"[a-zA-Z0-9_-]{1,1024}", event_id):
             raise UserError("Copy an event ID from /events.")
         existing = self.calendar.get(event_id) if event_id else None
@@ -94,7 +102,7 @@ class Scheduler:
             raise UserError("To create a meeting, leave event_id empty.")
         if existing and not existing.get("etag"):
             raise UserError("Event has no version information. Try refreshing /events.")
-        emails, missing = self.resolve_invitees(plan.invitees)
+        emails, missing = self.resolve_invitees(plan.invitees, emails)
         if missing and plan.action != "delete":
             raise NeedContacts(missing)
         body = (
