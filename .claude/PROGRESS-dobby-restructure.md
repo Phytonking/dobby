@@ -45,7 +45,7 @@ Phase order was 1 -> 2 -> 4 -> 3 -> 5 as the plan specified (4 before 3 because 
 ## Bug fix: Dobby went quiet after being given an email (2026-09-11)
 
 - Cause: the email-reply branch of `on_message` had no error handling, so any exception (in the field, `PermissionError` writing `data/contacts.json` from a root-owned bind mount) surfaced only as `discord_event_failed event=on_message`.
-- Fix: follow-up handling moved into `Bot.route()` and wrapped so failures are reported in the channel; a failed save no longer blocks the meeting (emails from the conversation are passed to `Scheduler.prepare(..., emails=...)` and win over the memory file, with a `contact_not_saved` notice); startup and `--check` now verify the data directory is writable (`check_data_dir`).
+- Fix: follow-up handling moved into `Bot.route()` and wrapped so failures are reported in the channel; a failed save no longer blocks the meeting (emails from the conversation are passed to `Scheduler.prepare(..., emails=...)` and win over the memory file, with a `contact_not_saved` notice); startup and `--check` now verify the data directory is writable (`check_data_dir`); `--check` fails, a normal start only warns `data_dir_not_writable` and runs without memory.
 
 ## Bug fix: doubled titles and empty "Changed:" lists (2026-09-11)
 

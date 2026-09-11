@@ -110,3 +110,29 @@ def test_data_dir_is_created_and_must_be_writable(tmp_path):
     blocker.write_text("x", encoding="utf-8")
     with pytest.raises(ConfigError, match="not writable"):
         check_data_dir(SimpleNamespace(data_dir=str(blocker)))
+
+
+def test_unwritable_data_dir_fails_check_but_only_warns_at_startup(tmp_path, caplog):
+    from bot.main import main
+
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    token = tmp_path / "token.json"
+    token.write_text('{"refresh_token": "r", "client_id": "c", "client_secret": "s"}', encoding="utf-8")
+    env = {
+        "DOBBY_ENV_FILE": str(tmp_path / "missing.env"),
+        "DISCORD_TOKEN": "t",
+        "DISCORD_GUILD_ID": "1",
+        "ALLOWED_USER_IDS": "2",
+        "GEMINI_API_KEY": "g",
+        "GOOGLE_TOKEN_FILE": str(token),
+        "DOBBY_DATA_DIR": str(blocker),
+    }
+    with patch.dict(os.environ, env, clear=True):
+        with pytest.raises(SystemExit) as stopped:
+            main(["--check"])
+        assert stopped.value.code == 2
+        with patch("bot.main.Bot") as bot:
+            main([])
+        bot.return_value.run.assert_called_once()
+    assert "data_dir_not_writable" in caplog.text

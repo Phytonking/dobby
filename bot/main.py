@@ -767,7 +767,13 @@ def main(argv=None):
     try:
         config = Config.load()
         check_token_file(config)
-        check_data_dir(config)
+        try:
+            check_data_dir(config)
+        except ConfigError as exc:
+            # Contact memory is optional at runtime: warn and run, but --check must fail loudly.
+            if check_only:
+                raise
+            log.warning("data_dir_not_writable: %s Contacts will not be remembered until fixed.", exc)
     except ConfigError as exc:
         # Authored text with no credential values, so it is safe to show the operator.
         log.error("startup_failed: %s", exc)
