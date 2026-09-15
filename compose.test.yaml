@@ -20,6 +20,8 @@ services:
     environment:
       # Keep a stray host .env from leaking real credentials into the suite.
       DOBBY_ENV_FILE: /nonexistent.env
+      # Composio writes a cache at import time; redirect to tmpfs in read-only container.
+      COMPOSIO_CACHE_DIR: /tmp/.composio
     command: [python, -m, pytest, -q, -p, no:cacheprovider, --basetemp=/tmp/pytest]
 
   lint:

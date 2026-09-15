@@ -32,7 +32,7 @@ class Contacts:
         try:
             with open(self.path, encoding="utf-8") as stream:
                 data = json.load(stream)
-        except OSError, ValueError:
+        except (OSError, ValueError):
             return {}
         contacts = data.get("contacts") if isinstance(data, dict) else None
         return contacts if isinstance(contacts, dict) else {}

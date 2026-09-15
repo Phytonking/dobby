@@ -17,19 +17,17 @@ class Config:
     roles: frozenset[int]
     channels: frozenset[int]
     gemini_key: str
+    composio_key: str
     model: str
-    token_file: str
-    calendar: str
     timezone: str
     mention_channels: frozenset[int] = frozenset()
     context_limit: int = 12
-    data_dir: str = "data"
 
     @classmethod
     def load(cls):
         # Compose mounts this file read-only; credential values never enter image metadata.
         load_dotenv(os.getenv("DOBBY_ENV_FILE", ".env"), override=False, interpolate=False)
-        required = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "GEMINI_API_KEY"]
+        required = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "GEMINI_API_KEY", "COMPOSIO_API_KEY", "DATABASE_URL"]
         missing = [k for k in required if not os.getenv(k)]
         if missing:
             raise ConfigError("Missing configuration: " + ", ".join(missing))
@@ -56,18 +54,12 @@ class Config:
             roles,
             channels,
             os.environ["GEMINI_API_KEY"],
+            os.environ["COMPOSIO_API_KEY"],
             os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite"),
-            os.getenv("GOOGLE_TOKEN_FILE", "secrets/google-token.json"),
-            os.getenv("GOOGLE_CALENDAR_ID", "primary"),
             zone,
             mentions,
             12,
-            os.getenv("DOBBY_DATA_DIR", "data"),
         )
-
-    @property
-    def contacts_file(self):
-        return os.path.join(self.data_dir, "contacts.json")
 
     def mentionable(self, channel):
         """Empty MENTION_CHANNEL_IDS permits any channel, matching ALLOWED_CHANNEL_IDS."""

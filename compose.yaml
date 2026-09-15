@@ -1,8 +1,43 @@
 name: dobby
+
 services:
-  dobby:
-    build: .
-    image: dobby:local
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dobby
+      POSTGRES_USER: dobby
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dobby"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    command: alembic -c migrations/alembic.ini upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dobby:${POSTGRES_PASSWORD}@postgres:5432/dobby
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  bot:
+    build:
+      context: .
+      target: runtime
+    image: dobby-bot:local
     pull_policy: never
     user: "${DOBBY_UID:-10001}:${DOBBY_GID:-10001}"
     init: true
@@ -16,25 +51,71 @@ services:
     stop_grace_period: 30s
     tmpfs:
       - /tmp:size=16m,mode=1777
-    volumes:
-      # Dobby's contact memory (name -> email) lives here and survives rebuilds.
-      - ./data:/data
     environment:
-      DOBBY_ENV_FILE: /run/secrets/dobby.env
-      GOOGLE_TOKEN_FILE: /run/secrets/google-token.json
-      DOBBY_DATA_DIR: /data
-    secrets:
-      - source: dobby_env
-        target: dobby.env
-      - source: google_token
-        target: google-token.json
+      DATABASE_URL: postgresql+asyncpg://dobby:${POSTGRES_PASSWORD}@postgres:5432/dobby
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?}
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
+      TEAM_TIMEZONE: ${TEAM_TIMEZONE:-America/Los_Angeles}
+      ALLOWED_ROLE_IDS: ${ALLOWED_ROLE_IDS:-}
+      ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:-}
+      ALLOWED_CHANNEL_IDS: ${ALLOWED_CHANNEL_IDS:-}
+      MENTION_CHANNEL_IDS: ${MENTION_CHANNEL_IDS:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     logging:
       driver: json-file
       options:
         max-size: 5m
         max-file: "3"
-secrets:
-  dobby_env:
-    file: ./.env
-  google_token:
-    file: ./secrets/google-token.json
+
+  dashboard:
+    build:
+      context: ./dashboard
+    image: dobby-dashboard:local
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dobby:${POSTGRES_PASSWORD}@postgres:5432/dobby
+      SECRET_KEY: ${SECRET_KEY:?}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?}
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3000}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ./frontend
+    image: dobby-frontend:local
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${DASHBOARD_URL:-http://localhost:8000}
+    depends_on:
+      - dashboard
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+volumes:
+  pgdata:
