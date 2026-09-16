@@ -116,7 +116,7 @@ def say(key, **fields):
         template = pick(lines)
     try:
         return template.format(**fields)
-    except KeyError, IndexError, ValueError:
+    except (KeyError, IndexError, ValueError):
         log.warning("voice_format_failed key=%s", key)
         return FALLBACK.get(key, "Dobby is at your service.").format_map(Defaults(fields))
 
