@@ -57,8 +57,10 @@ services:
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
+      COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       TEAM_TIMEZONE: ${TEAM_TIMEZONE:-America/Los_Angeles}
+      CONTEXT_MESSAGE_LIMIT: ${CONTEXT_MESSAGE_LIMIT:-12}
       ALLOWED_ROLE_IDS: ${ALLOWED_ROLE_IDS:-}
       ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:-}
       ALLOWED_CHANNEL_IDS: ${ALLOWED_CHANNEL_IDS:-}
@@ -83,13 +85,16 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://dobby:${POSTGRES_PASSWORD}@postgres:5432/dobby
       SECRET_KEY: ${SECRET_KEY:?}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?}
-      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?}
-      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?}
+      AUTH_MODE: ${AUTH_MODE:-oauth}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
+      COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3000}
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?}
+      API_URL: ${API_URL:-http://localhost:8000}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -108,7 +113,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${DASHBOARD_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8000}
     depends_on:
       - dashboard
     logging:

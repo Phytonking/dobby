@@ -27,27 +27,30 @@ router = APIRouter()
 # OAuth client setup
 # ---------------------------------------------------------------------------
 
+AUTH_MODE = os.environ.get("AUTH_MODE", "oauth")  # "oauth" | "local" | "both"
+GOOGLE_ENABLED = bool(os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"))
+DISCORD_OAUTH_ENABLED = bool(os.environ.get("DISCORD_CLIENT_ID") and os.environ.get("DISCORD_CLIENT_SECRET"))
+
 oauth = OAuth()
 
-oauth.register(
-    name="google",
-    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={
-        "scope": "openid email profile",
-        "hd": "uw.edu",
-    },
-)
+if GOOGLE_ENABLED:
+    oauth.register(
+        name="google",
+        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile", "hd": "uw.edu"},
+    )
 
-oauth.register(
-    name="discord",
-    client_id=os.environ.get("DISCORD_CLIENT_ID"),
-    client_secret=os.environ.get("DISCORD_CLIENT_SECRET"),
-    authorize_url="https://discord.com/api/oauth2/authorize",
-    access_token_url="https://discord.com/api/oauth2/token",
-    client_kwargs={"scope": "identify email"},
-)
+if DISCORD_OAUTH_ENABLED:
+    oauth.register(
+        name="discord",
+        client_id=os.environ.get("DISCORD_CLIENT_ID"),
+        client_secret=os.environ.get("DISCORD_CLIENT_SECRET"),
+        authorize_url="https://discord.com/api/oauth2/authorize",
+        access_token_url="https://discord.com/api/oauth2/token",
+        client_kwargs={"scope": "identify email"},
+    )
 
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 
@@ -58,12 +61,10 @@ DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 
 @router.get("/google")
 async def auth_google(request: Request):
+    if not GOOGLE_ENABLED:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Google OAuth not configured")
     redirect_uri = str(request.url_for("auth_google_callback"))
-    return await oauth.google.authorize_redirect(
-        request,
-        redirect_uri,
-        hd="uw.edu",
-    )
+    return await oauth.google.authorize_redirect(request, redirect_uri, hd="uw.edu")
 
 
 @router.get("/google/callback", name="auth_google_callback")
@@ -114,6 +115,8 @@ async def auth_google_callback(request: Request, db: AsyncSession = Depends(get_
 
 @router.get("/discord")
 async def auth_discord(request: Request):
+    if not DISCORD_OAUTH_ENABLED:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Discord OAuth not configured")
     redirect_uri = str(request.url_for("auth_discord_callback"))
     return await oauth.discord.authorize_redirect(request, redirect_uri)
 

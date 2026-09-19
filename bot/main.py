@@ -127,7 +127,7 @@ class Bot(discord.Client):
                     guild_id=str(message.guild.id),
                     channel_id=str(message.channel.id),
                     discord_user_id=str(message.author.id),
-                    entity_id=str(message.author.id),
+                    entity_id=self.config.composio_entity_id,
                     timezone=tz,
                 )
             await reply.edit(content=response[:1900])
@@ -168,7 +168,7 @@ class Bot(discord.Client):
                         guild_id=str(interaction.guild_id),
                         channel_id=str(interaction.channel_id),
                         discord_user_id=str(interaction.user.id),
-                        entity_id=str(interaction.user.id),
+                        entity_id=self.config.composio_entity_id,
                         timezone=tz,
                     )
                 await interaction.edit_original_response(content=response[:2000])
@@ -197,7 +197,7 @@ class Bot(discord.Client):
                         guild_id=str(interaction.guild_id),
                         channel_id=str(interaction.channel_id),
                         discord_user_id=str(interaction.user.id),
-                        entity_id=str(interaction.user.id),
+                        entity_id=self.config.composio_entity_id,
                         timezone=tz,
                     )
                 await interaction.edit_original_response(content=response[:2000])

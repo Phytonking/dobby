@@ -18,6 +18,7 @@ class Config:
     channels: frozenset[int]
     gemini_key: str
     composio_key: str
+    composio_entity_id: str
     model: str
     timezone: str
     mention_channels: frozenset[int] = frozenset()
@@ -47,6 +48,7 @@ class Config:
             ZoneInfo(zone)
         except Exception:
             raise ConfigError(f"TEAM_TIMEZONE is not a known IANA zone: {zone}") from None
+        context_limit = int(os.getenv("CONTEXT_MESSAGE_LIMIT", "12"))
         return cls(
             os.environ["DISCORD_TOKEN"],
             guild,
@@ -55,10 +57,11 @@ class Config:
             channels,
             os.environ["GEMINI_API_KEY"],
             os.environ["COMPOSIO_API_KEY"],
+            os.getenv("COMPOSIO_ENTITY_ID", "dobby"),
             os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite"),
             zone,
             mentions,
-            12,
+            context_limit,
         )
 
     def mentionable(self, channel):
