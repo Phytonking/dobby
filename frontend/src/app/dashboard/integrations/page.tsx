@@ -18,7 +18,7 @@ interface ProviderConfig {
 
 const PROVIDERS: ProviderConfig[] = [
   {
-    key: 'google_calendar',
+    key: 'googlecalendar',
     label: 'Google Calendar',
     description: 'Let Dobby access your calendar to schedule events and check availability.',
     icon: <Calendar className="h-6 w-6 text-blue-400" />,

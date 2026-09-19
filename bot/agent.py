@@ -7,8 +7,8 @@ from google import genai
 from google.genai import errors, types
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .memory import load_history, append_turn, load_guild_settings
-from .tools import get_toolset, get_gemini_tools, execute_tool
+from .memory import load_history, append_turn
+from .tools import create_composio_session, get_gemini_tools, execute_tool
 
 log = logging.getLogger("agent")
 
@@ -29,8 +29,17 @@ class Agent:
             api_key=config.gemini_key,
             http_options=types.HttpOptions(timeout=60000),
         )
-        self.toolset = get_toolset(config.composio_key)
-        self.gemini_tools = get_gemini_tools(self.toolset)
+        self._composio_client = None
+        self._session = None
+        self._gemini_tools = None
+
+    def _ensure_tools(self):
+        if self._session is None:
+            self._composio_client, self._session = create_composio_session(
+                self.config.composio_key,
+                self.config.composio_entity_id,
+            )
+            self._gemini_tools = get_gemini_tools(self._session)
 
     async def run(
         self,
@@ -44,6 +53,12 @@ class Agent:
     ) -> str:
         tz = timezone or self.config.timezone
         now = datetime.now(ZoneInfo(tz)).isoformat()
+
+        try:
+            self._ensure_tools()
+        except Exception as exc:
+            log.error("composio_init_failed type=%s: %s", type(exc).__name__, exc)
+            return "Tool connections are not configured yet. Ask an admin to check the Composio API key."
 
         history = await load_history(session, guild_id, channel_id)
         contents = _history_to_contents(history)
@@ -63,7 +78,7 @@ class Agent:
                     contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=system,
-                        tools=self.gemini_tools,
+                        tools=self._gemini_tools,
                         temperature=0,
                         max_output_tokens=4096,
                     ),
@@ -96,8 +111,8 @@ class Agent:
             for fc in fn_calls:
                 tool_calls_made += 1
                 params = dict(fc.args) if fc.args else {}
-                log.info("tool_call tool=%s entity=%s", fc.name, entity_id)
-                result = execute_tool(self.toolset, fc.name, params, entity_id)
+                log.info("tool_call tool=%s", fc.name)
+                result = execute_tool(self._session, fc.name, params)
                 await append_turn(
                     session,
                     guild_id,

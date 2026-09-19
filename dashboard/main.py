@@ -8,7 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .auth import get_current_user
 from .database import engine
-from .routers import auth, admin, integrations
+from .routers import auth, admin, integrations, local_auth
 from .schemas import UserOut
 from .seed import seed_bootstrap_admin
 
@@ -32,15 +32,24 @@ app.add_middleware(
     https_only=os.environ.get("ENV", "development") == "production",
 )
 
+_dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
+_allowed_origins = list({
+    _dashboard_url,
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+})
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("DASHBOARD_URL", "http://localhost:3000")],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(local_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 

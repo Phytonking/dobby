@@ -32,7 +32,7 @@ async def seed_bootstrap_admin() -> None:
             display_name=display_name,
             role="admin",
         )
-        async with db.begin():
-            db.add(admin)
+        db.add(admin)
+        await db.commit()
 
     logger.info("Bootstrap admin seeded: %s", bootstrap_email)

@@ -1,44 +1,43 @@
-# Assumes composio-core>=0.7.0. The exact API shape (dict vs object) may vary;
-# both branches are handled below.
-from composio import ComposioToolSet, App
-from google.genai import types
+# Uses composio>=0.21.0 (v3 API). The old composio-core 0.7.x is dead (v1 API returns 410).
+import logging
 
-APPS = [App.GOOGLECALENDAR, App.GITHUB, App.NOTION]
+log = logging.getLogger("tools")
 
-
-def get_toolset(api_key: str) -> ComposioToolSet:
-    return ComposioToolSet(api_key=api_key)
+TOOLKITS = ["googlecalendar", "github", "notion"]
 
 
-def get_gemini_tools(toolset: ComposioToolSet) -> list[types.Tool]:
-    """Convert Composio action schemas to Gemini function declarations."""
-    actions = toolset.get_tools(apps=APPS)
+def create_composio_session(api_key: str, entity_id: str):
+    from composio import Composio
+    client = Composio(api_key=api_key)
+    session = client.tool_router.create(
+        user_id=entity_id,
+        toolkits=TOOLKITS,
+    )
+    return client, session
+
+
+def get_gemini_tools(session):
+    from google.genai import types
+    raw_tools = session.tools()
     declarations = []
-    for action in actions:
-        if isinstance(action, dict):
-            name = action.get("name", "")
-            description = action.get("description", "")
-            parameters = action.get("parameters")
-        else:
-            name = action.name
-            description = getattr(action, "description", "")
-            parameters = getattr(action, "parameters", None)
+    for tool in raw_tools:
+        name = getattr(tool, "name", None) or (tool.get("name") if isinstance(tool, dict) else None)
+        desc = getattr(tool, "description", None) or (tool.get("description") if isinstance(tool, dict) else None)
+        params = getattr(tool, "parameters", None) or (tool.get("parameters") if isinstance(tool, dict) else None)
         if not name:
             continue
-        kwargs = {"name": name, "description": description}
-        if parameters is not None:
-            kwargs["parameters"] = parameters
+        kwargs = {"name": name, "description": desc or ""}
+        if params is not None:
+            kwargs["parameters"] = params
         declarations.append(types.FunctionDeclaration(**kwargs))
-    return [types.Tool(function_declarations=declarations)]
+    return [types.Tool(function_declarations=declarations)] if declarations else []
 
 
-def execute_tool(toolset: ComposioToolSet, tool_name: str, params: dict, entity_id: str) -> dict:
+def execute_tool(session, tool_name: str, params: dict) -> dict:
     try:
-        result = toolset.execute_action(
-            action=tool_name,
-            params=params,
-            entity_id=entity_id,
-        )
-        return {"success": True, "data": result}
+        result = session.execute(tool_name, arguments=params)
+        data = result if isinstance(result, dict) else getattr(result, "data", str(result))
+        return {"success": True, "data": data}
     except Exception as exc:
+        log.warning("tool_execute_failed tool=%s error=%s", tool_name, type(exc).__name__)
         return {"success": False, "error": str(exc)}

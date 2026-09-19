@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
@@ -17,39 +16,29 @@ router = APIRouter()
 
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
+COMPOSIO_ENTITY_ID = os.environ.get("COMPOSIO_ENTITY_ID", "dobby")
 
-# Supported providers mapped to Composio App enum values
-SUPPORTED_PROVIDERS = {"github", "google_calendar", "notion"}
-
-
-def _get_composio_app(provider: str):
-    """Return the Composio App enum for a given provider string."""
-    from composio import App  # import at call time so app still loads without composio
-
-    mapping = {
-        "github": App.GITHUB,
-        "google_calendar": App.GOOGLECALENDAR,
-        "notion": App.NOTION,
-    }
-    app = mapping.get(provider)
-    if app is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported provider '{provider}'. Supported: {sorted(SUPPORTED_PROVIDERS)}",
-        )
-    return app
+PROVIDER_MAP = {
+    "googlecalendar": "googlecalendar",
+    "github": "github",
+    "notion": "notion",
+}
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
+def _get_session():
+    from composio import Composio
+    client = Composio(api_key=COMPOSIO_API_KEY)
+    return client.tool_router.create(
+        user_id=COMPOSIO_ENTITY_ID,
+        toolkits=list(PROVIDER_MAP.values()),
+    )
+
 
 @router.get("", response_model=list[IntegrationOut])
 async def list_integrations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all connected integrations for the current user."""
     try:
         result = await db.execute(
             select(Integration)
@@ -59,7 +48,7 @@ async def list_integrations(
         integrations = result.scalars().all()
     except Exception:
         logger.exception("Failed to list integrations for user %s", current_user.id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
+        raise HTTPException(status_code=500, detail="Internal error")
 
     return [IntegrationOut.model_validate(i) for i in integrations]
 
@@ -68,37 +57,35 @@ async def list_integrations(
 async def connect_integration(
     provider: str,
     request: Request,
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Initiate Composio OAuth flow for the given provider."""
     if not COMPOSIO_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Composio is not configured",
-        )
+        raise HTTPException(status_code=503, detail="Composio not configured")
 
-    composio_app = _get_composio_app(provider)
+    toolkit = PROVIDER_MAP.get(provider)
+    if not toolkit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider '{provider}'. Use: {', '.join(sorted(PROVIDER_MAP))}",
+        )
 
     try:
-        from composio import ComposioToolSet
+        session = _get_session()
+        callback = f"{DASHBOARD_URL}/api/integrations/{provider}/callback"
+        conn_req = session.authorize(toolkit, callback_url=callback)
+        redirect_url = getattr(conn_req, "redirect_url", None)
 
-        toolset = ComposioToolSet(api_key=COMPOSIO_API_KEY)
-        entity = toolset.get_entity(entity_id=str(current_user.id))
-        connection_req = entity.initiate_connection(app=composio_app)
-        redirect_url = connection_req.redirectUrl
+        if not redirect_url:
+            conn_status = getattr(conn_req, "status", "")
+            if conn_status.upper() in ("ACTIVE", "CONNECTED"):
+                return RedirectResponse(url=f"{DASHBOARD_URL}/dashboard/integrations?connected={provider}")
+            raise ValueError(f"No redirect URL from Composio (status={conn_status})")
+
     except HTTPException:
         raise
-    except Exception:
-        logger.exception(
-            "Failed to initiate Composio connection for user %s provider %s",
-            current_user.id,
-            provider,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not reach Composio",
-        )
+    except Exception as exc:
+        logger.exception("Composio connect failed for %s: %s", provider, exc)
+        raise HTTPException(status_code=502, detail=f"Composio error: {exc}")
 
     return RedirectResponse(url=redirect_url)
 
@@ -110,15 +97,8 @@ async def integration_callback(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Handle Composio OAuth callback — store or update the entity_id row."""
-    if provider not in SUPPORTED_PROVIDERS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported provider '{provider}'",
-        )
-
-    # Composio uses the entity_id we set (str(user.id)) — store it in the DB
-    entity_id = str(current_user.id)
+    if provider not in PROVIDER_MAP:
+        raise HTTPException(status_code=400, detail=f"Unknown provider '{provider}'")
 
     try:
         result = await db.execute(
@@ -127,28 +107,22 @@ async def integration_callback(
                 Integration.provider == provider,
             )
         )
-        integration = result.scalar_one_or_none()
+        existing = result.scalar_one_or_none()
 
-        async with db.begin():
-            if integration is None:
-                integration = Integration(
-                    user_id=current_user.id,
-                    provider=provider,
-                    composio_entity_id=entity_id,
-                )
-                db.add(integration)
-            else:
-                integration.composio_entity_id = entity_id
-                db.add(integration)
+        if existing is None:
+            db.add(Integration(
+                user_id=current_user.id,
+                provider=provider,
+                composio_entity_id=COMPOSIO_ENTITY_ID,
+            ))
+        else:
+            existing.composio_entity_id = COMPOSIO_ENTITY_ID
+        await db.commit()
     except Exception:
-        logger.exception(
-            "Failed to store integration for user %s provider %s",
-            current_user.id,
-            provider,
-        )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
+        logger.exception("Failed to store integration for %s %s", current_user.id, provider)
+        raise HTTPException(status_code=500, detail="Internal error")
 
-    return RedirectResponse(url=f"{DASHBOARD_URL}/dashboard/integrations")
+    return RedirectResponse(url=f"{DASHBOARD_URL}/dashboard/integrations?connected={provider}")
 
 
 @router.delete("/{provider}", status_code=204)
@@ -157,7 +131,6 @@ async def disconnect_integration(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove a Composio integration for the current user."""
     try:
         result = await db.execute(
             select(Integration).where(
@@ -167,18 +140,11 @@ async def disconnect_integration(
         )
         integration = result.scalar_one_or_none()
         if integration is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No '{provider}' integration found",
-            )
-        async with db.begin():
-            await db.delete(integration)
+            raise HTTPException(status_code=404, detail=f"No '{provider}' integration found")
+        await db.delete(integration)
+        await db.commit()
     except HTTPException:
         raise
     except Exception:
-        logger.exception(
-            "Failed to delete integration for user %s provider %s",
-            current_user.id,
-            provider,
-        )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
+        logger.exception("Failed to delete integration for %s %s", current_user.id, provider)
+        raise HTTPException(status_code=500, detail="Internal error")

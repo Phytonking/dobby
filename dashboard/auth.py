@@ -54,7 +54,7 @@ def set_session_cookie(response, token: str) -> None:
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="lax",
+        samesite="none" if _is_secure() else "lax",
         secure=_is_secure(),
         max_age=SESSION_DAYS * 86400,
         path="/",
@@ -85,8 +85,8 @@ async def create_session(
         provider=provider,
         expires_at=expires_at,
     )
-    async with db.begin():
-        db.add(session)
+    db.add(session)
+    await db.commit()
     return token
 
 
@@ -95,8 +95,8 @@ async def delete_session(db: AsyncSession, token: str) -> None:
     result = await db.execute(select(Session).where(Session.token == token))
     session = result.scalar_one_or_none()
     if session:
-        async with db.begin():
-            await db.delete(session)
+        await db.delete(session)
+        await db.commit()
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,10 @@ from sqlalchemy import (
     ARRAY,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, TIMESTAMPTZ
+from sqlalchemy import TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+TIMESTAMPTZ = TIMESTAMP(timezone=True)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .database import Base
@@ -33,6 +36,7 @@ class User(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMPTZ, server_default=text("now()")
     )
+    password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     sessions: Mapped[list["Session"]] = relationship(
         "Session", back_populates="user", cascade="all, delete-orphan"

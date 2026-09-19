@@ -58,6 +58,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
       COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
+      COMPOSIO_CACHE_DIR: /tmp/.composio
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       TEAM_TIMEZONE: ${TEAM_TIMEZONE:-America/Los_Angeles}
       CONTEXT_MESSAGE_LIMIT: ${CONTEXT_MESSAGE_LIMIT:-12}
@@ -92,6 +93,7 @@ services:
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
       COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
+      COMPOSIO_CACHE_DIR: /tmp/.composio
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3000}
       API_URL: ${API_URL:-http://localhost:8000}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
@@ -114,6 +116,7 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8000}
+      INTERNAL_API_URL: http://dashboard:8000
     depends_on:
       - dashboard
     logging:

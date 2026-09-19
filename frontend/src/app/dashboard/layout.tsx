@@ -3,11 +3,11 @@ import { redirect } from 'next/navigation'
 import { Nav } from '@/components/nav'
 import type { User } from '@/lib/types'
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const INTERNAL_API = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 async function getMe(cookieHeader: string): Promise<User | null> {
   try {
-    const res = await fetch(`${API}/me`, {
+    const res = await fetch(`${INTERNAL_API}/me`, {
       headers: { Cookie: cookieHeader },
       cache: 'no-store',
     })

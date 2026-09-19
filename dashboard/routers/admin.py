@@ -77,8 +77,8 @@ async def create_user(
             role=body.role,
             added_by=admin.id,
         )
-        async with db.begin():
-            db.add(user)
+        db.add(user)
+        await db.commit()
     except HTTPException:
         raise
     except Exception:
@@ -104,8 +104,8 @@ async def delete_user(
         user = result.scalar_one_or_none()
         if user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        async with db.begin():
-            await db.delete(user)
+        await db.delete(user)
+        await db.commit()
     except HTTPException:
         raise
     except Exception:
@@ -130,9 +130,9 @@ async def update_user_role(
         user = result.scalar_one_or_none()
         if user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        async with db.begin():
-            user.role = body.role
-            db.add(user)
+        user.role = body.role
+        db.add(user)
+        await db.commit()
     except HTTPException:
         raise
     except Exception:
@@ -182,14 +182,14 @@ async def upsert_guild_settings(
 
         update_data = body.model_dump(exclude_unset=True)
 
-        async with db.begin():
-            if settings is None:
-                settings = GuildSettings(guild_id=guild_id, **update_data)
-                db.add(settings)
-            else:
-                for field, value in update_data.items():
-                    setattr(settings, field, value)
-                db.add(settings)
+        if settings is None:
+            settings = GuildSettings(guild_id=guild_id, **update_data)
+            db.add(settings)
+        else:
+            for field, value in update_data.items():
+                setattr(settings, field, value)
+            db.add(settings)
+        await db.commit()
     except Exception:
         logger.exception("Failed to upsert guild settings for %s", guild_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
