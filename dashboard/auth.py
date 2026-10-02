@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_db
 from .models import Session, User
+from .login_config import require_provider
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def set_session_cookie(response, token: str) -> None:
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="none" if _is_secure() else "lax",
+        samesite="lax",
         secure=_is_secure(),
         max_age=SESSION_DAYS * 86400,
         path="/",
@@ -85,6 +86,7 @@ async def create_session(
         provider=provider,
         expires_at=expires_at,
     )
+    # The callback's user lookup has already begun this transaction.
     db.add(session)
     await db.commit()
     return token
@@ -131,6 +133,8 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired or not found"
         )
+
+    require_provider(session.provider, request)
 
     user_result = await db.execute(select(User).where(User.id == session.user_id))
     user = user_result.scalar_one_or_none()

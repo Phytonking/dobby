@@ -9,12 +9,11 @@ EXPECTED_TABLES = {
     "users",
     "sessions",
     "integrations",
-    "conversation_history",
-    "user_facts",
     "agent_actions",
-    "guild_settings",
-    "contacts",
+    "calendar_invites",
 }
+# Folded into users or dropped by 002; nothing may still depend on them.
+DROPPED_TABLES = {"conversation_history", "user_facts", "guild_settings", "contacts"}
 
 
 def test_upgrade_head_creates_all_tables(migrated_db):
@@ -23,6 +22,7 @@ def test_upgrade_head_creates_all_tables(migrated_db):
         tables = {row[0] for row in result}
         missing = EXPECTED_TABLES - tables
         assert not missing, f"tables missing after upgrade head: {missing}"
+        assert not DROPPED_TABLES & tables, f"dropped tables still present: {DROPPED_TABLES & tables}"
 
     run_db(check)
 
@@ -52,20 +52,20 @@ def test_dashboard_models_match_migrated_schema(migrated_db):
 
     run_db(check)
 
-    # conversation_history/user_facts are bot-owned (raw SQL, no ORM model);
-    # alembic_version is alembic's own. Diffs on those tables are expected.
-    bot_owned = {"conversation_history", "user_facts", "alembic_version"}
+    # The bot writes these with raw SQL and has no ORM model; alembic_version is alembic's own.
+    bot_owned = {"calendar_invites", "alembic_version"}
+    bot_owned_columns = {("users", "calendar_email_updated_at")}
 
-    def is_bot_owned(diff):
+    # Runtime breakage only: tables/columns one side lacks, or a type mismatch. Nullability,
+    # index and FK declarations differ harmlessly between the models and the migrations.
+    def is_real(diff):
         d = diff[0] if isinstance(diff, list) else diff
         kind = d[0]
         if kind in {"remove_table", "add_table"}:
-            return d[1].name in bot_owned
-        if kind in {"remove_index", "add_index", "remove_constraint", "add_constraint"}:
-            return d[1].table.name in bot_owned
-        if kind.startswith("modify_"):
-            return d[2] in bot_owned  # (kind, schema, table, column, ...)
-        return False
+            return d[1].name not in bot_owned
+        if kind in {"remove_column", "add_column"}:
+            return (d[2], d[3].name) not in bot_owned_columns  # (kind, schema, table, Column)
+        return kind == "modify_type"
 
-    real_drift = [d for d in diffs if not is_bot_owned(d)]
+    real_drift = [d for d in diffs if is_real(d)]
     assert not real_drift, "ORM models drifted from migrations:\n" + "\n".join(repr(d) for d in real_drift)

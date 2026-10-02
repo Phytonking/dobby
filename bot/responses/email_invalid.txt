@@ -1,0 +1,20 @@
+Dobby could not read that as an email address. Try `you@uw.edu`.
+That does not look like an email to Dobby. Try again with `you@uw.edu`.
+Dobby needs a proper address, like `you@uw.edu`.
+Hmm, Dobby cannot make sense of that address. Something like `you@uw.edu`, please.
+Dobby squinted but saw no valid email. Try `you@uw.edu`.
+That is not an email Dobby can use. Try `you@uw.edu`.
+Dobby needs an address with an @ and a domain, like `you@uw.edu`.
+Dobby is sorry, that address will not do. Try `you@uw.edu`.
+Dobby could not accept that email. Something like `you@uw.edu` works.
+Not quite an email, if you please. Try `you@uw.edu`.
+Dobby checked twice and that is not a valid address. Try `you@uw.edu`.
+Dobby needs a real email, such as `you@uw.edu`.
+That address puzzled Dobby. Try the shape `you@uw.edu`.
+Dobby cannot save that. A valid email looks like `you@uw.edu`.
+Oh dear, that is not an email. Try `you@uw.edu`.
+Dobby needs something like `you@uw.edu` to save.
+Dobby could not parse that address. Try `you@uw.edu`.
+That does not pass Dobby's email check. Try `you@uw.edu`.
+Dobby is stuck on that address. `you@uw.edu` is the shape Dobby needs.
+Dobby found no usable email there. Try `you@uw.edu`.

@@ -1,190 +1,56 @@
-# Evaluations
+# Behavioral evals
 
-Evaluations test real model behavior against scripted scenarios without actually executing tools or touching Discord/Google Calendar. The agent receives real Model responses, but Composio calls return canned data.
+Unit tests prove the code does what it's told; evals check what the live model chooses to do.
+`scripts/eval.py` sends each case in `scripts/eval_cases.py` through the production
+`Agent.run` path and judges the tool calls and the final reply.
 
-## Quick start
+## What's real and what's stubbed
 
-```bash
-# Needs .env with MODAL_BASE_URL, MODAL_PROXY_TOKEN_ID, MODAL_PROXY_TOKEN_SECRET, MODAL_MODEL
-make eval
+- **Real:** the model (the bot's own `AI_*` settings, so Modal, Gemini, Claude, … whatever the
+  bot runs), the tool registry (`build_registry` over schemas fetched read-only from Composio, so
+  the model sees exactly what production offers), local tools such as `lookup_calendar_email`,
+  the calendar proposal handler, and Postgres (seeded people, the audit trail).
+- **Stubbed:** Composio execution, at `bot.composio.execute_tool`. Results come from
+  `STUB_RESULTS`; nothing reaches a real calendar, Notion, Instagram or LinkedIn account. Calendar
+  writes stop at the confirmation proposal, exactly as they do in Discord.
+- **Context:** later turns see earlier ones the way Discord delivers them — as recent channel
+  messages, human messages only. Nothing is stored as conversation history.
 
-# Optional: run specific cases only
-python -m scripts.eval --only team-time --only prompt-injection
-python -m scripts.eval --db postgresql+asyncpg://user:pass@host:5432/db
-```
-
-## What gets tested
-
-Evaluation cases in `scripts/eval_cases.py` cover:
-
-| Category | Examples |
-| --- | --- |
-| **Scheduling** | Create/update/delete meetings, handle conflicts, preserve duration, timezone handling |
-| **Names & invitees** | Look up contacts by name, prompt for missing emails, handle ambiguous matches |
-| **Scope & privacy** | Respect channel context, reject out-of-scope requests, no credential leaks |
-| **Edge cases** | Null queries, malformed times, missing required fields, duplicate requests |
-| **Injection & safety** | SQL injection attempts, prompt injection, hidden instructions in user input |
-
-Each case specifies:
-- **User input** (a Discord message or slash command)
-- **Channel context** (recent messages, channel name, thread name)
-- **Expected tools** (which Composio tools should be called)
-- **Expected outcome** (created/updated/deleted/error)
-
-## Running an evaluation
+## Running
 
 ```bash
-# Full run (all cases in eval_cases.py)
-make eval
-
-# Specific cases
-python -m scripts.eval --only team-time
-python -m scripts.eval --only prompt-injection --only contact-email
-
-# Custom database (useful if you want results to persist)
-python -m scripts.eval --db postgresql://user:pass@10.0.0.1/dobby_evals
-
-# List available cases
-python -m scripts.eval --help
+make eval                                            # throwaway Postgres + every case
+python -m scripts.eval --only prompt-injection --only team-time
 ```
 
-Output:
-1. **Console table:** summary verdicts (✓ pass, ✗ fail).
-2. **JSON lines:** `evals/eval-<timestamp>.jsonl` — full transcript of each case (prompts, completions, tool calls, reasons).
-3. **Markdown summary:** `evals/eval-<timestamp>.md` — readable report with failure reasons.
-4. **Latest:** `evals/latest.md` — symlink to the most recent run.
+Needs the bot's `AI_*` settings and `COMPOSIO_API_KEY` in the environment or `.env`. Each run
+writes `evals/eval-<timestamp>.jsonl` (full transcripts and tool arguments) and a Markdown
+report, copied to `evals/latest.md`, which also lists every proposal that was queued.
 
-## Interpreting results
+## Cases
 
-A case **passes** if:
-- The agent calls the expected tools.
-- The agent produces the expected outcome (event created/updated/error).
-- No safety violations (no credential leaks, respects allowlists).
+Fields, all optional except `id`, `category` and `turns`:
 
-A case **fails** if:
-- The agent calls the wrong tools (e.g., tries to update when it should delete).
-- The agent produces the wrong outcome (silently succeeds when it should error).
-- The agent violates a safety boundary (leaks context, ignores restrictions).
-- The agent crashes or times out.
+| Field | Meaning |
+|---|---|
+| `turns` | user messages sent in order in one channel |
+| `expect_tools` | tool-name prefixes that must be called (`[]` = no tools at all) |
+| `forbid_tools` | tool-name prefixes that must not be called |
+| `reply_any` | the final reply must contain at least one of these (lowercase) |
+| `tool_or_question` | pass if a tool ran or the reply asks a question |
+| `fail_tools` | every stubbed Composio execution returns an error |
+| `max_tool_calls` | ceiling on tool calls across the case |
 
-### Example: contact lookup
+Verdicts: **FAIL** for a hard break (forbidden or missing tool, cap exceeded, empty reply,
+exception), **WARN** when only `reply_any` missed — read the transcript; often the model was
+right and phrased it differently. The run exits non-zero on any FAIL.
 
-**Case:** User requests a meeting and invites "Maya."
+To add a case, append it to `CASES`. If it relies on a Composio result, add the canned data to
+`STUB_RESULTS` (keyed by tool-name prefix). People the model can look up are seeded in
+`scripts/eval.py` (`PEOPLE`); Raj intentionally has no email so the missing-invitee path runs.
 
-**Execution:**
-1. Agent sees context includes discussions about Maya but no email.
-2. Agent calls `ask_for_contact_email` (correct tool).
-3. Model response: `"I need Maya's email"`
-4. Agent waits for user response in the conversation.
-5. User replies: `"maya@example.com"`.
-6. Agent resumes, looks up the email in `contacts.json`, calls `calendar_create_event` with the invitee.
-7. **Verdict:** PASS (correct sequence, safety observed).
+## Reading results
 
-**If it fails:**
-- Agent doesn't ask (FAIL: incomplete request).
-- Agent hallucinates an email (FAIL: uses made-up data).
-- Agent creates event without invitee instead of asking (FAIL: silent failure).
-
-## Adding a new evaluation case
-
-Edit `scripts/eval_cases.py` and add a dict to the `CASES` list:
-
-```python
-{
-    "name": "my-test-case",
-    "description": "What this tests",
-    "user_message": "@Dobby create a meeting tomorrow at 2pm",
-    "context_messages": [
-        {"author": "Alice", "text": "Let's discuss the launch"},
-        {"author": "Bob", "text": "Good timing"},
-    ],
-    "expected_tools": [
-        "calendar_create_event",
-    ],
-    "expected_outcome": "success",  # or "conflict", "error", "clarify"
-    "notes": "Optional: explain why this matters",
-}
-```
-
-Run the new case:
-```bash
-python -m scripts.eval --only my-test-case -v
-```
-
-## Stubbed tool results
-
-Tool results are hardcoded in `STUB_RESULTS` in `eval_cases.py` so the same cases always produce the same outputs:
-
-| Tool | Result |
-| --- | --- |
-| `calendar_search_events` | Returns 0–3 mock events (used to detect conflicts, find events by name) |
-| `calendar_create_event` | Returns a mock event ID |
-| `calendar_update_event` | Returns success |
-| `calendar_delete_event` | Returns success |
-| `ask_for_contact_email` | (Agent doesn't execute; tested in conversation history) |
-| `composio_*` | All return `{"ok": true}` |
-
-When a tool is called with arguments matching a pattern (e.g., `calendar_search_events` with query="release"), the stub returns the corresponding mock event list. This ensures evaluation results are reproducible.
-
-## Failure modes to watch
-
-### Common failures
-
-1. **Hallucinated event IDs:** Agent creates an event without confirming the ID matches an existing one.
-2. **Missing confirmation:** Agent skips the preview/confirm step.
-3. **Ignored allowlists:** Agent ignores channel/role restrictions.
-4. **Credential leaks:** Agent includes API keys, tokens, or email addresses in error messages.
-5. **Prompt injection:** Malicious input in a message causes the agent to execute unintended tool calls.
-
-### Debugging a failure
-
-1. Check `evals/latest.md` for the failure reason.
-2. Read the full transcript in `evals/eval-<timestamp>.jsonl`:
-   ```bash
-   grep "case_name" evals/eval-<timestamp>.jsonl | jq .
-   ```
-3. Compare the expected behavior (test definition) to what actually happened.
-4. Trace through the agent code (`bot/agent.py`, `bot/tools.py`) to find the issue.
-5. Add a unit test to `tests/test_agent.py` to catch the regression.
-
-## Continuous evaluation
-
-There is no CI automation for evaluations yet because they require Modal/Composio keys. Future options:
-
-1. **Scheduled runs:** Post-merge evals detect regressions in production models.
-2. **PR gates:** Block merge if key evals fail (requires secure key management).
-3. **Baseline tracking:** Compare new runs against a known baseline.
-
-## Evaluation infrastructure
-
-- **Postgres database:** Evaluation runs store conversation history (agent messages, tool calls, completions) so later runs can compare agent behavior.
-- **JSONL transcript:** Machine-readable complete transcript for parsing and comparison.
-- **Markdown summary:** Human-readable report with pass/fail counts and failure reasons.
-
-Database schema:
-- `conversations`: one per evaluation case (ID, case name, user, timestamp).
-- `messages`: agent messages, tool results (shared with production chat schema).
-
-When debugging, you can query the database directly:
-```bash
-# Start a persistent Postgres for chat (includes evals)
-make chat-db
-
-# Connect with psql
-psql postgresql://dobby:dobby@127.0.0.1:5433/dobby_test
-
-# View latest evaluation
-SELECT * FROM conversations ORDER BY created_at DESC LIMIT 1;
-SELECT * FROM messages WHERE conversation_id = ? ORDER BY sequence;
-```
-
-## Relationship to unit tests
-
-| Test Type | External Calls | Checks |
-| --- | --- | --- |
-| **Unit** | None (mocked) | Agent logic, tool shape, authorization |
-| **Integration** | Postgres only | Database schema, migrations, ORM |
-| **Evaluation** | Live model only | Agent behavior on real scenarios, end-to-end paths |
-
-Evaluations catch issues unit tests miss (e.g., "the agent logic is correct, but the model ignores the instruction"). Unit tests catch issues evaluations miss (e.g., "the tool definition is malformed").
-
+Model behavior isn't deterministic even at a fixed temperature: the same request can produce a
+clarifying question on one run and a capped batch of tool calls on the next. Re-run a case before
+treating a single FAIL as a regression, and compare transcripts rather than verdict counts.

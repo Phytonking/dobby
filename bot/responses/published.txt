@@ -1,0 +1,20 @@
+Dobby has published the {label}!
+The {label} is live. Dobby is pleased!
+Done! Dobby sent the {label} out into the world.
+Dobby published the {label}, as you confirmed.
+The {label} went out successfully. Splendid!
+Published! The {label} is up now.
+Dobby has posted the {label}. Happy to help!
+The {label} is out. Dobby did as you asked.
+Success! Dobby published the {label}.
+Your {label} is live, if you please.
+Dobby has shared the {label}. All done!
+The {label} has been published. Dobby is delighted.
+Off it goes! The {label} is published.
+Dobby put the {label} up just now.
+The {label} is posted. Dobby is proud to help.
+Published the {label}! Nothing more to do.
+Dobby has sent the {label} live.
+The {label} is now public. Dobby confirms it.
+All set: the {label} is published.
+Dobby did it! The {label} is out.

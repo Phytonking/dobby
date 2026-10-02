@@ -49,24 +49,36 @@ services:
     mem_limit: 512m
     cpus: 1.0
     stop_grace_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     tmpfs:
       - /tmp:size=16m,mode=1777
     environment:
       DATABASE_URL: postgresql+asyncpg://dobby:${POSTGRES_PASSWORD}@postgres:5432/dobby
       DISCORD_TOKEN: ${DISCORD_TOKEN:?}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?}
-      MODAL_BASE_URL: ${MODAL_BASE_URL:?}
-      MODAL_PROXY_TOKEN_ID: ${MODAL_PROXY_TOKEN_ID:?}
-      MODAL_PROXY_TOKEN_SECRET: ${MODAL_PROXY_TOKEN_SECRET:?}
-      MODAL_MODEL: ${MODAL_MODEL:?}
-      MODAL_REASONING_EFFORT: ${MODAL_REASONING_EFFORT:-}
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY_BACKUP: ${AI_API_KEY_BACKUP:-}
+      # No default: preserve absent (legacy fallback) versus explicitly empty (disabled).
+      AI_MODEL_BACKUP:
+      LOCAL_MODEL: ${LOCAL_MODEL:-false}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-8192}
+      AI_REASONING_EFFORT: ${AI_REASONING_EFFORT:-}
       MAX_TOOL_CALLS: ${MAX_TOOL_CALLS:-40}
-      MODEL_MAX_TOKENS: ${MODEL_MAX_TOKENS:-8192}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
-      COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
+      # Tools returning file attachments write a cache; the root filesystem is read-only.
       COMPOSIO_CACHE_DIR: /tmp/.composio
+      COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
+      INSTAGRAM_USER_ID: ${INSTAGRAM_USER_ID:-}
+      NOTION_PARENT_PAGE_ID: ${NOTION_PARENT_PAGE_ID:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
+      GEMINI_MODEL_BACKUP: ${GEMINI_MODEL_BACKUP-gemini-3.1-flash-lite}
       TEAM_TIMEZONE: ${TEAM_TIMEZONE:-America/Los_Angeles}
-      CONTEXT_MESSAGE_LIMIT: ${CONTEXT_MESSAGE_LIMIT:-12}
+      CONTEXT_MESSAGE_LIMIT: ${CONTEXT_MESSAGE_LIMIT:-50}
       ALLOWED_ROLE_IDS: ${ALLOWED_ROLE_IDS:-}
       ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:-}
       ALLOWED_CHANNEL_IDS: ${ALLOWED_CHANNEL_IDS:-}
@@ -92,16 +104,16 @@ services:
       DATABASE_URL: postgresql+asyncpg://dobby:${POSTGRES_PASSWORD}@postgres:5432/dobby
       SECRET_KEY: ${SECRET_KEY:?}
       AUTH_MODE: ${AUTH_MODE:-oauth}
+      # Empty = loopback/RFC1918 only; add a VPN range here to let those clients log in.
+      LOCAL_NETWORKS: ${LOCAL_NETWORKS:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
       COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
-      COMPOSIO_CACHE_DIR: /tmp/.composio
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3000}
       LOCAL_MODE: ${LOCAL_MODE:-false}
-      API_URL: ${API_URL:-http://localhost:8000}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
     depends_on:
       migrate:
@@ -115,6 +127,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # Baked into the browser bundle; rebuild this service after changing API_URL.
+        NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8000}
+        LOCAL_MODE: ${LOCAL_MODE:-false}
     image: dobby-frontend:local
     pull_policy: never
     restart: unless-stopped
@@ -122,7 +138,6 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8000}
-      INTERNAL_API_URL: http://dashboard:8000
     depends_on:
       - dashboard
     logging:

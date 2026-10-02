@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Trash2, ShieldCheck, ShieldOff } from 'lucide-react'
+import { UserPlus, Trash2, ShieldCheck, ShieldOff, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -40,17 +40,21 @@ interface NewUserForm {
   display_name: string
   uw_email: string
   discord_id: string
+  calendar_email: string
   role: 'student' | 'admin'
+}
+
+const EMPTY_FORM: NewUserForm = {
+  display_name: '',
+  uw_email: '',
+  discord_id: '',
+  calendar_email: '',
+  role: 'student',
 }
 
 function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<NewUserForm>({
-    display_name: '',
-    uw_email: '',
-    discord_id: '',
-    role: 'student',
-  })
+  const [form, setForm] = useState<NewUserForm>(EMPTY_FORM)
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -58,11 +62,12 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
         display_name: form.display_name,
         uw_email: form.uw_email,
         discord_id: form.discord_id || undefined,
+        calendar_email: form.calendar_email || undefined,
         role: form.role,
       }),
     onSuccess: () => {
       setOpen(false)
-      setForm({ display_name: '', uw_email: '', discord_id: '', role: 'student' })
+      setForm(EMPTY_FORM)
       onSuccess()
     },
   })
@@ -79,7 +84,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
         <DialogHeader>
           <DialogTitle>Add user to allowlist</DialogTitle>
           <DialogDescription>
-            Add a pre-registered UW student or admin to the bot roster.
+            Add a pre-registered student or admin to the bot roster.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -93,13 +98,13 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="uw_email">UW email</Label>
+            <Label htmlFor="uw_email">Google email</Label>
             <Input
               id="uw_email"
               type="email"
               value={form.uw_email}
               onChange={(e) => setForm((f) => ({ ...f, uw_email: e.target.value }))}
-              placeholder="jane@uw.edu"
+              placeholder="jane@gmail.com"
             />
           </div>
           <div className="grid gap-2">
@@ -109,6 +114,16 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
               value={form.discord_id}
               onChange={(e) => setForm((f) => ({ ...f, discord_id: e.target.value }))}
               placeholder="123456789012345678"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="calendar_email">Calendar email (optional)</Label>
+            <Input
+              id="calendar_email"
+              type="email"
+              value={form.calendar_email}
+              onChange={(e) => setForm((f) => ({ ...f, calendar_email: e.target.value }))}
+              placeholder="Where Dobby sends meeting invitations"
             />
           </div>
           <div className="grid gap-2">
@@ -146,21 +161,118 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
   )
 }
 
+function EditUserDialog({ user, onSuccess }: { user: User; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({
+    display_name: user.display_name,
+    discord_id: user.discord_id ?? '',
+    calendar_email: user.calendar_email ?? '',
+  })
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.admin.users.update(user.id, {
+        display_name: form.display_name,
+        discord_id: form.discord_id || null,
+        calendar_email: form.calendar_email || null,
+      }),
+    onSuccess: () => {
+      setOpen(false)
+      onSuccess()
+    },
+  })
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) {
+          setForm({
+            display_name: user.display_name,
+            discord_id: user.discord_id ?? '',
+            calendar_email: user.calendar_email ?? '',
+          })
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" title="Edit user">
+          <Pencil className="h-4 w-4 text-zinc-400" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit {user.display_name}</DialogTitle>
+          <DialogDescription>
+            The calendar email is where Dobby sends this person&apos;s meeting invitations.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor={`edit_name_${user.id}`}>Display name</Label>
+            <Input
+              id={`edit_name_${user.id}`}
+              value={form.display_name}
+              onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor={`edit_discord_${user.id}`}>Discord ID</Label>
+            <Input
+              id={`edit_discord_${user.id}`}
+              value={form.discord_id}
+              onChange={(e) => setForm((f) => ({ ...f, discord_id: e.target.value }))}
+              placeholder="123456789012345678"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor={`edit_email_${user.id}`}>Calendar email</Label>
+            <Input
+              id={`edit_email_${user.id}`}
+              type="email"
+              value={form.calendar_email}
+              onChange={(e) => setForm((f) => ({ ...f, calendar_email: e.target.value }))}
+              placeholder="jane@gmail.com"
+            />
+          </div>
+        </div>
+        {mutation.isError && (
+          <p className="text-sm text-red-400">{(mutation.error as Error).message}</p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.display_name}>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function UserRow({
   user,
   onRemove,
   onToggleRole,
+  onEdited,
   isActing,
 }: {
   user: User
   onRemove: (id: string) => void
   onToggleRole: (id: string, role: string) => void
+  onEdited: () => void
   isActing: boolean
 }) {
   return (
     <TableRow>
       <TableCell className="font-medium text-zinc-100">{user.display_name}</TableCell>
       <TableCell className="text-zinc-300">{user.uw_email ?? '—'}</TableCell>
+      <TableCell className="text-zinc-300">
+        {user.calendar_email ?? <span className="italic text-zinc-600">not set</span>}
+      </TableCell>
       <TableCell className="font-mono text-xs text-zinc-400">{user.discord_id ?? '—'}</TableCell>
       <TableCell>
         <Badge variant={user.role === 'admin' ? 'success' : 'secondary'} className="capitalize">
@@ -176,6 +288,7 @@ function UserRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
+          <EditUserDialog user={user} onSuccess={onEdited} />
           <Button
             variant="ghost"
             size="sm"
@@ -206,6 +319,7 @@ function UserRow({
 
 export default function UsersPage() {
   const queryClient = useQueryClient()
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
@@ -214,12 +328,12 @@ export default function UsersPage() {
 
   const removeMutation = useMutation({
     mutationFn: (id: string) => api.admin.users.remove(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: refresh,
   })
 
   const roleMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) => api.admin.users.setRole(id, role),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: refresh,
   })
 
   return (
@@ -228,12 +342,10 @@ export default function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Users</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Manage the allowlist of students and admins.
+            Manage the allowlist of students and admins, and the calendar emails Dobby invites.
           </p>
         </div>
-        <AddUserDialog
-          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })}
-        />
+        <AddUserDialog onSuccess={refresh} />
       </div>
 
       <Card>
@@ -254,7 +366,8 @@ export default function UsersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>UW Email</TableHead>
+                  <TableHead>Google email</TableHead>
+                  <TableHead>Calendar email</TableHead>
                   <TableHead>Discord ID</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Added</TableHead>
@@ -269,6 +382,7 @@ export default function UsersPage() {
                       user={user}
                       onRemove={(id) => removeMutation.mutate(id)}
                       onToggleRole={(id, role) => roleMutation.mutate({ id, role })}
+                      onEdited={refresh}
                       isActing={
                         (removeMutation.isPending && removeMutation.variables === user.id) ||
                         (roleMutation.isPending && roleMutation.variables?.id === user.id)
@@ -277,7 +391,7 @@ export default function UsersPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-zinc-500">
+                    <TableCell colSpan={7} className="py-10 text-center text-zinc-500">
                       No users in the allowlist.
                     </TableCell>
                   </TableRow>

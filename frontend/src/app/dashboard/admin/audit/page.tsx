@@ -120,7 +120,6 @@ export default function AuditPage() {
                     <TableHead>Tool</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Duration</TableHead>
-                    <TableHead>Summary</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -150,14 +149,11 @@ export default function AuditPage() {
                         <TableCell className="text-xs text-zinc-400">
                           {entry.duration_ms != null ? `${entry.duration_ms}ms` : '—'}
                         </TableCell>
-                        <TableCell className="max-w-xs truncate text-xs text-zinc-400">
-                          {entry.input_summary ?? '—'}
-                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-10 text-center text-zinc-500">
+                      <TableCell colSpan={5} className="py-10 text-center text-zinc-500">
                         No audit entries found.
                       </TableCell>
                     </TableRow>

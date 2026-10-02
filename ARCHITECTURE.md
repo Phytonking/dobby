@@ -1,110 +1,84 @@
-﻿# Dobby architecture
+# Dobby architecture
+
+Dobby is three deployable pieces sharing one Postgres database, all started by `compose.yaml`:
+
+| Piece | Runtime | Doc |
+| --- | --- | --- |
+| `bot/` | Python 3.12, discord.py + configurable AI + Composio | [docs/BOT_ARCHITECTURE.md](docs/BOT_ARCHITECTURE.md) |
+| `dashboard/` | FastAPI on uvicorn, port 8000 | [docs/DASHBOARD_ARCHITECTURE.md](docs/DASHBOARD_ARCHITECTURE.md) |
+| `frontend/` | Next.js 15, port 3000 | [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) |
+
+```mermaid
+flowchart LR
+    U[Discord teammate] -->|mention / slash command| B[bot]
+    B -->|last 50 channel messages, live| D[(Discord API)]
+    B -->|prompt + curated tools| G[Configured AI model]
+    B -->|actions as entity COMPOSIO_ENTITY_ID| C[Composio]
+    C --> GC[Google Calendar]
+    C --> N[Notion]
+    C --> IG[Instagram]
+    C --> LI[LinkedIn]
+    B -->|users, calendar emails, audit metadata| P[(Postgres)]
+    A[Admin browser] --> F[frontend :3000] --> API[dashboard :8000]
+    API --> P
+    API -->|connect service accounts| C
+```
 
 ## Runtime
 
-One Python 3.14 process runs in a Linux Docker container on Windows Docker Desktop (`linux/amd64`) or a 64-bit Raspberry Pi (`linux/arm64`). Outbound Discord Gateway and HTTPS connections handle requests, Gemini planning, and Google Calendar. The normal runtime has no published ports.
+Five Compose services: `postgres`, `migrate` (Alembic, runs once), `bot`, `dashboard`, `frontend`. The bot publishes no ports, runs non-root with all capabilities dropped, a read-only filesystem, a 16 MB `/tmp`, bounded logs and a 512 MB memory cap. The dashboard and frontend publish 8000 and 3000 on the host. All configuration is environment variables from a local `.env` (never baked into images); `bot/config.py` validates the bot's and `docker compose config` the rest.
 
-The Dockerfile stages are `base` (dependencies and `bot/`), `test` (adds `pyproject.toml`, `scripts/` and `tests/`), and `runtime`. `runtime` is last so a bare `docker build .` selects it, and `publish.yml` pins `target: runtime`; the deployed image therefore never contains the test suite.
-
-```mermaid
-flowchart TD
-    U[Discord teammate] --> A[Server, channel and role checks]
-    A --> P[Gemini structured planning]
-    H[Optional six recent messages] --> P
-    P --> V[Validation and conflict check]
-    V --> C[Channel preview and confirmation]
-    C --> R[Authorization, expiry and ETag checks]
-    R --> G[Google Calendar write]
-    G --> O[Channel result]
-    S[Local credential files] --> M[Read-only Compose mounts]
-    M --> B[Dobby container on Pi or Windows]
-    B --> A
-    GH[Push to main] --> T[Tests and multi-architecture build]
-    T --> CR[GitHub Container Registry]
-    CR --> UP[Optional Pi pull timer]
-    UP --> B
-```
+The root `Dockerfile` has stages `base` (dependencies + `bot/`), `migrate`, `test` (adds `tests/`, `scripts/`, `pyproject.toml`) and `runtime` (last, so a bare `docker build .` selects it; `publish.yml` pins it). The dashboard and frontend have their own Dockerfiles.
 
 ## Source structure
 
 | Path | Responsibility |
 | --- | --- |
-| `bot/config.py` | Load local/mounted dotenv; validate settings and allowlists |
-| `bot/main.py` | Discord lifecycle, mentions/context, commands, channel confirmations |
-| `bot/voice.py` | Dobby's voice: `say(key)` reads `bot/responses/<key>.txt` (20 phrasings each) on every call and picks one at random; nothing is cached |
-| `bot/planner.py` | Gemini structured output with context treated as untrusted data |
-| `bot/chat.py` | Capability summary and off-topic replies (Gemini, Dobby voice, always ends with a farewell); decides what is not a calendar request before the planner runs |
-| `bot/lookup.py` | Fuzzy title search over upcoming editable events for update/delete without an ID |
-| `bot/contacts.py` | Name -> email memory (`data/contacts.json`) and the reply parser for Dobby's email questions |
-| `bot/models.py` | Writable field schema, time validation, duration/default/timezone rules |
-| `bot/service.py` | Prepare without writing; exact event selection and ETags |
-| `bot/calendar.py` | OAuth HTTP, pagination, conflicts, conditional writes, sanitized errors |
-| `scripts/link_google.py` | Desktop OAuth loopback authorization, directly or through Docker |
-| `scripts/check_secrets.py` | Baseline tracked-file credential guard |
-| `scripts/bootstrap.py` | Create `.env`/`secrets/` before first run; repair Docker-created directories |
-| `scripts/update-pi.sh` | Locked pull/recreate of configured registry image |
-| `compose.yaml` | Secure local runtime for both platforms |
-| `compose.auth.yaml` | One-shot OAuth helper with loopback-only host callback |
-| `compose.registry.yaml` | Optional published-image override |
-| `compose.test.yaml` | Offline test/lint services built from the Dockerfile `test` stage |
-| `deploy/` | Optional systemd Pi update timer |
-| `.github/workflows/` | PR checks and main-only image publication |
-| `tests/` | Mocked behavior/security tests |
+| `bot/main.py` | Entrypoint: load config, `--check`, start the Discord client |
+| `bot/config.py` | Frozen `Config` from env/dotenv; allowlists, timezone, `CONTEXT_MESSAGE_LIMIT`, `COMPOSIO_ENTITY_ID`, service IDs |
+| `bot/AIModels.py` | Model settings, Gemini/Claude/GPT/DeepSeek/local adapters and request-scoped fallback |
+| `bot/agent.py` | Provider-independent tool-calling loop over a registry; returns text plus any confirm-gated `PendingAction`s |
+| `bot/composio.py` | Curated Composio action schemas → model tool declarations; execution under the service entity, off the event loop |
+| `bot/memory.py` | Postgres: users by Discord ID/name, calendar emails, `agent_actions` metadata rows |
+| `bot/integrations/base.py` | `Integration`, `LocalTool`, `PendingAction`, `RunContext` |
+| `bot/integrations/discord/` | The transport: client (gating, cooldown, mentions), live channel context, `/email` + `/help`, the Confirm/Cancel view |
+| `bot/integrations/google_calendar/`, `notion/`, `instagram/`, `linkedin/` | One folder per service: Composio actions the model may call, local tools, slash commands, prompt guidance, publish helpers |
+| `bot/voice.py`, `bot/responses/` | Dobby's phrasings, 20 per situation |
+| `dashboard/` | Login (Google/Discord OAuth and/or local LAN accounts), user roster and calendar emails, admin-only service-account connections, audit log |
+| `frontend/` | The web UI for the above |
+| `migrations/` | Alembic schema (`001_initial`, `002_merge_contacts_service_integrations`) |
+| `scripts/bootstrap.py` | Create `.env` before the first run; repair a Docker-created directory |
+| `scripts/check_secrets.py` | CI guard against committed credentials |
+| `scripts/update-pi.sh`, `deploy/` | Optional Pi pull-and-recreate timer for the published bot image |
+| `compose.yaml`, `compose.registry.yaml`, `compose.test.yaml` | Runtime, published-image override for `bot`, offline tests/lint |
+| `.github/workflows/` | PR checks (`ci.yml`) and main-only bot image publication (`publish.yml`) |
 
-## Request lifecycle
+## Request lifecycle (summary)
 
-1. Reject other servers, unauthorized users/roles and channels before calling Google/Gemini. No administrator bypass. Mention context also requires current membership and View Channel/Read Message History in the requesting channel or thread. `MENTION_CHANNEL_IDS` narrows mentions to named channels; empty permits any visible channel, mirroring `ALLOWED_CHANNEL_IDS`, so the message content intent is always requested and the user/role allowlist remains the access boundary.
-2. Defer slash responses publicly. For mentions, reply in the originating channel or thread before fetching context. No DMs are sent; previews and results are visible to everyone with access there. Previews are inline text with 🟢/🔴 reactions; only the requester's reaction within two minutes is honoured, and a raw reaction handler re-authorizes them before writing.
-3. Mentions always gather at most twelve preceding same-channel messages with author display names, plus the channel and thread names, so Gemini infers a title before clarifying. Bots are excluded and each text is limited to 1,500 characters. No attachments, linked pages, other channels or archives. Discord's message cache is disabled.
-4. Updates/deletes fetch the user-supplied exact event ID from the fixed calendar. Gemini cannot choose another calendar or arbitrary event ID.
-5. Gemini sees current team-local time, the request, recent channel context, the channel/thread names and selected event fields. Typed validation only permits title, start/end, description and location operations.
-6. Validate future aware timestamps, positive duration up to 24 hours and supported event types. New meetings default to one hour; moved meetings preserve duration. Clarify missing/ambiguous details. No write occurs during planning.
-7. Show a two-minute single-use channel confirmation restricted to its requester. Mention buttons fetch current guild roles and recheck private thread membership; slash buttons check the fresh interaction membership. Dobby's voice is fixed presentation text: no extra AI call, no rewriting Calendar fields.
-8. Serialize API work through one bounded executor. Recheck conflicts before writes. PATCH/DELETE carry `If-Match` with the preview ETag; stale events fail. Creates use a deterministic SHA-256 ID based on the Discord request.
-9. Consume the view before awaiting a write, preventing double-click duplication. Report results in the originating channel or thread. After uncertain network failures users must inspect `/events` before issuing another request.
+1. **Gate.** Reject other servers, users/roles outside the allowlist and disallowed channels before calling anything. 10-second per-user cooldown. No admin bypass.
+2. **Context.** Read the last `CONTEXT_MESSAGE_LIMIT` human messages from the channel via the Discord API; resolve `@mentions` to registered users. Discard afterwards.
+3. **Agent.** The configured model receives the persona, every integration's guidance, the context block (marked untrusted), the request and the mentioned people. It may call curated Composio actions (calendar, Notion) or local tools. Publishing tools only *queue* a `PendingAction`.
+4. **Result.** The reply is edited into the channel. Queued actions are shown as a preview with Confirm/Cancel (requester-only, 2 minutes); Confirm runs them. Every tool call and publish is recorded in `agent_actions` as metadata only.
 
-## Secrets and access boundaries
+Details: [docs/BOT_ARCHITECTURE.md](docs/BOT_ARCHITECTURE.md).
 
-Local `.env` contains API credentials and settings; `secrets/google-token.json` contains OAuth credentials. Compose mounts both read-only. `DOBBY_ENV_FILE` selects the mounted dotenv, and an explicit environment override selects the mounted token path. Credential values do not enter image build arguments or Compose container environment configuration. Dotenv interpolation is disabled to preserve literal credential characters; explicit process environment values take precedence.
+## Secrets and trust boundaries
 
-Compose secrets are local bind-backed files, not encrypted storage. On Pi match the container UID/GID to their owner, with files mode `600` and directory mode `700`. On Windows use account ACLs. The runtime is non-root with all capabilities dropped, no published ports, a read-only filesystem, and bounded memory/logs. Host root, Docker administrators, and deployed code can still read secrets.
+- **`.env`** holds the Discord token, AI provider and Composio keys, optional dashboard OAuth client secrets, the cookie secret and the Postgres password. Compose passes them as environment; Git and Docker builds ignore the file. Dotenv interpolation is off; explicit process environment wins.
+- **Composio** holds the OAuth tokens for Google Calendar, Notion, Instagram and LinkedIn under one entity (`COMPOSIO_ENTITY_ID`). Dobby never sees provider tokens; revoking in Composio cuts it off. Only dashboard admins can connect or disconnect.
+- **Postgres** holds people (names, Google emails and local credential hashes, Discord IDs, calendar emails), dashboard sessions, which providers are connected, and tool-call metadata. No message content, tool arguments or results are stored.
+- **Discord allowlists** delegate the connected accounts' capabilities to a role: anyone with it can create events, write Notion pages and — after their own Confirm — publish to the group's social accounts, all as Dobby. Restrict the role.
+- The dashboard signs sessions with `SECRET_KEY`; login supports OAuth and/or LAN username/password accounts (`AUTH_MODE`), restricted to pre-registered users (verified Google accounts from any domain, known Discord IDs, or administrator-created local usernames). `PATCH /me` lets a user change only their own calendar email. Local credentials are salted scrypt hashes in Postgres (migration 003), created/reset with `python -m dashboard.local_admin USERNAME`. Local login and sessions require a private/loopback client address; host firewall restrictions remain necessary with Docker or proxies. See [dashboard setup](README.md#step-5-dashboard-login).
+- Logs carry Discord actor/guild IDs and tool names, never prompts, message text or credentials. The selected AI provider's data policy applies.
 
-The OAuth helper is a separate Compose project so it can run before a token exists. It mounts the secrets directory writable and publishes port 8765 only on host loopback. Its internal listener binds all container interfaces so Docker forwarding works, while the Google redirect URI remains localhost. The SDK validates OAuth state; the flow times out after five minutes and writes credentials without printing them. A headless Pi receives the token through SCP after Windows authorization.
+## Image delivery and updates
 
-Discord allowlists delegate management of all supported events in the configured calendar, without granting Google login access or changing calendar ACLs. The OAuth `calendar.events` scope can reach other calendars accessible to the account. A dedicated Google account limits the impact of token compromise.
-
-Errors do not log raw API bodies, prompts, event details or credentials. Operation logs contain Discord actor/server IDs. Free-tier Gemini may use data for product improvement; channel participation and meeting sensitivity must suit the API terms.
-
-## Image delivery and update trust
-
-Main pushes verify code and publish AMD64/ARM64 images with GitHub's built-in token. No cloud key or bot credentials are needed. Public package visibility enables anonymous Pi pulls; PR checks have no registry-write permission.
-
-The optional Pi timer runs a trusted local updater as root for Docker access, pulling before replacing and using `flock` to prevent overlap. Failed pulls preserve the current container; bad images are not automatically rolled back. It does not automatically pull Git: Compose and updater files change through deliberate checkout updates. Only trusted administrators may edit that checkout, and only trusted maintainers may publish images; either can deploy code that accesses secrets.
-
-Updates replace the single container, briefly reconnect Discord and invalidate previews. Windows manual pulls use the same registry override. No external deployment endpoint, self-hosted Actions runner, or container-mounted Docker socket is used.
-
-## Cloud deployment status
-
-The runtime is host-agnostic and already satisfies what a cloud platform needs: it configures entirely from environment variables (`load_dotenv` runs with `override=False`, so injected variables win over any `.env`), opens no listening port, writes nothing to disk, and refreshes access tokens in memory only. A read-only root filesystem and no persistent volume are sufficient.
-
-A working deployment existed and was removed: `.github/workflows/deploy.yml` at the initial commit deploys a Cloud Run **worker pool** — the correct primitive for a gateway bot with no HTTP port — with `--instances 1` and the OAuth token mounted as a file via `--set-secrets '/secrets/google-token.json=…'`. Recovering it is a workflow change; the application code needs none.
-
-Three things still need doing before that path is live again:
-
-- **Restore and update the workflow.** It predates the multi-stage Dockerfile, so its build step should pin `target: runtime`, matching `publish.yml`.
-- **Provide the OAuth token as a file.** `GOOGLE_TOKEN_FILE` must point at a real file; the token is the one setting that cannot be an environment variable. This requires a platform that mounts secrets as files.
-- **Pin the instance count to exactly one.** Per-user cooldowns are a process-local dict and confirmations are non-persistent `discord.ui.View` objects, so a second replica would duplicate gateway traffic and strand confirmation buttons on the instance that lacks their view. This is the same single-instance rule the Pi and Windows hosts follow.
-
-Testing-mode OAuth refresh tokens expiring in roughly seven days are more disruptive remotely, since relinking needs a local browser and then a redeployed secret. An always-on single instance also bills continuously while idle, which is why local hosting is the documented default. Previously created cloud resources, if any, need separate cleanup.
+Main pushes verify code and publish AMD64/ARM64 bot images with GitHub's built-in token. The optional Pi timer pulls before replacing, uses `flock`, never pulls Git, and only touches the `bot` service; the dashboard, frontend and migrations change through a deliberate checkout update and `docker compose up -d --build`. Updates briefly reconnect Discord and discard pending Confirm previews.
 
 ## Persistence and operating limits
 
-Google Calendar is the event store. The only application state on disk is `data/contacts.json` (`bot/contacts.py`): a name -> email map written atomically, mounted from `./data` in Compose. Open questions Dobby has asked (missing emails, a meeting title, or a choice between similar events) live in memory for five minutes and are keyed by channel and requester; a reply to Dobby's question resumes the original request. There is no message archive. Host credential files survive replacement; access tokens refresh in memory. Relinked token files require container recreation to remount reliably.
-
-One active instance per token is supported. Stop Windows before starting Pi, or use a separate test token/calendar. A ten-second per-user cooldown, four-job bound and network timeouts limit pressure. Docker restarts after crashes/boot while the engine is running. Windows sleep interrupts hosting. Disable the update timer before intentionally stopping the service.
-
-Conflict checks are not atomic with external Calendar writers. The bot does not inspect each attendee's private calendar, create conferences, share calendars or edit recurring/all-day events. Guests are added by merging with the existing attendee list because PATCH replaces the array. API free quotas are independent of local hosting.
+One bot instance per Discord token: cooldowns and Confirm views are process-local. Google Calendar remains the event store. The bot writes only `agent_actions`; users and their emails come from the dashboard. Composio action names are checked at startup (`composio_action_unknown`), not at build time. Instagram publishing needs a Business/Creator account and public image URLs; a story featuring a post cannot carry the share sticker. AI and integration provider quotas apply regardless of where Dobby is hosted.
 
 ## Verification
 
-Mocked tests cover authorization, confirmation ownership/revocation/expiry, duplicate clicks, durations, timezone handling, stale writes, pagination, conflicts and mention privacy. CI validates every Compose file, builds the runtime, then runs the suite and lint inside the `test` image via `compose.test.yaml` with networking disabled and no credentials. `bot.main --check` validates settings and the token file offline, exiting `2` with an actionable message; publication builds both architectures. Live Discord/Google testing still needs the owner's credentials. The deployment guide contains the live smoke test.
+Mocked tests cover gating and cooldowns, live-context gathering and mention resolution, the agent loop and local-tool dispatch, Composio schema conversion, the registry, the Confirm gate (requester-only, execute on Confirm only, cancel/timeout), each integration's publish flows, and every response pool. CI runs ruff, the suite, Compose validation and the Docker build, then the suite again inside the `test` image with networking disabled. `python -m bot.main --check` validates settings offline. Live Discord/Composio testing needs the owner's credentials; the deployment guide has the smoke test.

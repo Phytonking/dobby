@@ -1,0 +1,20 @@
+Oh dear! Dobby's magic refused that request. This is Dobby's fault, not yours. An admin should check the bot logs.
+Dobby is most sorry: the thinking-magic rejected Dobby's own words. Please tell an admin to look at the logs.
+Something is wrong with how Dobby asked, not with what you wanted. An admin should check the logs, if you please.
+Dobby bungled the spell, not the wish! An admin will find the reason in the bot logs.
+The magic sent Dobby's request straight back. That is a fault in Dobby. Please alert an admin.
+Dobby's request was malformed and the magic would not take it. An admin should read the logs.
+Oh dear, Dobby asked badly and was refused. Trying again will not help; please tell an admin.
+Dobby is embarrassed. The thinking-magic rejected the request Dobby built. An admin should check the logs.
+This one is Dobby's mistake, not yours. The magic refused Dobby's request; an admin should investigate.
+Dobby's spell was wrong and the magic would not hear it. Please ask an admin to check the bot logs.
+The magic says Dobby's request was invalid. Retrying will not mend it; an admin is needed.
+Dobby is sorry! The request Dobby sent was not acceptable to the magic. An admin should look into it.
+Dobby got the words wrong and the magic refused him. Please tell an admin to read the logs.
+The thinking-magic would not accept what Dobby sent. This needs an admin, not another try.
+Dobby has made a muddle of the request. An admin can see what went wrong in the logs.
+Refused! And the fault is Dobby's own. Please ask an admin to check the bot logs.
+Dobby built the request badly and the magic said no. An admin should be told.
+Oh dear. The magic rejected Dobby outright. Asking again will not help; an admin must look.
+Dobby is at fault here, not you. The magic refused the request; the logs will explain.
+The magic found Dobby's request improper. Please let an admin know so it can be mended.

@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@127.0.0.1:1/test")
-os.environ.setdefault("AUTH_MODE", "local")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -92,7 +91,7 @@ def make_db_session(user, token, expired=False):
         id=uuid.uuid4(),
         user_id=user.id,
         token=token,
-        provider="local",
+        provider="google",
         expires_at=datetime.now(timezone.utc) + delta,
         created_at=datetime.now(timezone.utc),
     )

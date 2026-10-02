@@ -1,10 +1,11 @@
-"""Behavioral eval runner: real Modal-hosted model decisions, stubbed tool execution.
+"""Behavioral eval runner: real model, real production tool registry, stubbed execution.
 
-Sends scripts/eval_cases.py through the production Agent.run path. The model
-is live (needs MODAL_BASE_URL / MODAL_PROXY_TOKEN_ID / MODAL_PROXY_TOKEN_SECRET
-/ MODAL_MODEL in env or .env); Composio is replaced by a stub session so no
-real calendar/github/notion action ever happens. Postgres holds conversation
-history exactly like production.
+Sends scripts/eval_cases.py through the production Agent.run path. The model comes from the same
+AI_* settings the bot uses (env or .env). Tool schemas are fetched read-only from Composio
+(COMPOSIO_API_KEY) into the bot's own registry, so the model sees exactly what production offers.
+Composio execution is stubbed at bot.composio.execute_tool: no real calendar, Notion, Instagram or
+LinkedIn action ever happens, and calendar writes stop at the confirmation proposal like they do
+in Discord. Postgres holds users and the audit trail exactly like production.
 
 Usage:
     make eval                 # throwaway postgres + full suite
@@ -30,40 +31,61 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = "postgresql+asyncpg://dobby:dobby@127.0.0.1:5433/dobby_test"
 EVAL_DIR = REPO_ROOT / "evals"
+REQUESTER = "900000000000000000"
+# Known people for invite cases; Raj deliberately has no email so the missing-invitee path runs.
+PEOPLE = (
+    ("900000000000000001", "Maya Patel", "maya@example.edu"),
+    ("900000000000000002", "Leonard Cho", "leonard@example.edu"),
+    ("900000000000000003", "Raj Mehta", None),
+)
 
 sys.path.insert(0, str(REPO_ROOT))
 
-# Must run before importing eval_cases: it reads MAX_TOOL_CALLS from
-# os.environ at module load time, so .env has to be loaded first or a value
-# set only in .env (not the shell) would be silently missed.
+# Must run before importing eval_cases: it reads MAX_TOOL_CALLS from os.environ at import time.
 from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(REPO_ROOT / ".env", override=False)
 
-from scripts.eval_cases import CASES, STUB_RESULTS, STUB_TOOLS  # noqa: E402
+from scripts.eval_cases import CASES, STUB_RESULTS  # noqa: E402
 
 
-class StubComposioSession:
-    """Real declarations shown to the model; execution returns canned data."""
+class StubComposio:
+    """Stands in for bot.composio.execute_tool; every call is canned, nothing reaches Composio."""
 
     def __init__(self):
-        self.calls = []
-        self.fail_mode = False
+        self.fail = False
 
-    def tools(self):
-        # Composio(api_key=...) defaults to OpenAIProvider, so real session.tools()
-        # nests each declaration under "function" — this is the same shape
-        # get_openai_tools passes straight through to `tools=` in production.
-        return [{"type": "function", "function": t} for t in STUB_TOOLS]
-
-    def execute(self, tool_name, arguments):
-        self.calls.append({"tool": tool_name, "args": arguments})
-        if self.fail_mode:
-            raise RuntimeError("stubbed failure: Calendar API rate limited")
-        for prefix, result in STUB_RESULTS.items():
+    def execute(self, toolset, tool_name, params, entity_id):
+        if self.fail:
+            return {"success": False, "error": "stubbed failure: Calendar API rate limited"}
+        if tool_name == "GOOGLECALENDAR_EVENTS_GET":
+            # Edits and deletes load the event first; give the proposal a real single meeting.
+            event = {
+                "id": params.get("event_id"),
+                "summary": "Officer meeting",
+                "start": {"dateTime": "2026-10-06T18:00:00-07:00"},
+                "end": {"dateTime": "2026-10-06T19:00:00-07:00"},
+            }
+            return {"success": True, "data": event}
+        for prefix, data in STUB_RESULTS.items():
             if tool_name.startswith(prefix):
-                return result
-        return {"ok": True}
+                return {"success": True, "data": data}
+        return {"success": True, "data": {}}
+
+
+def recording_agent_class():
+    from bot.agent import Agent
+
+    class RecordingAgent(Agent):
+        """Records every tool the model calls, including local ones that never reach Composio."""
+
+        calls: list
+
+        async def _call(self, ctx, name, params):
+            self.calls.append({"tool": name, "args": params})
+            return await super()._call(ctx, name, params)
+
+    return RecordingAgent
 
 
 def migrate(db_url):
@@ -76,33 +98,48 @@ def migrate(db_url):
     command.upgrade(cfg, "head")
 
 
-def build_agent(stub):
-    # .env already loaded at module import time (see top of file).
-    required = ("MODAL_BASE_URL", "MODAL_PROXY_TOKEN_ID", "MODAL_PROXY_TOKEN_SECRET", "MODAL_MODEL")
-    missing = [k for k in required if not os.environ.get(k)]
-    if missing:
-        sys.exit(f"eval needs {', '.join(missing)} (env or .env)")
+def build_agent():
+    from bot.AIModels import ModelSettings
+    from bot.composio import get_toolset
+    from bot.integrations import build_registry
+    from bot.models import ConfigError
 
-    from bot.agent import Agent
+    try:
+        settings = ModelSettings.from_env()
+    except ConfigError as exc:
+        sys.exit(f"eval needs the bot's AI_* settings (env or .env): {exc}")
+    if not os.environ.get("COMPOSIO_API_KEY"):
+        sys.exit("eval needs COMPOSIO_API_KEY to fetch the production tool schemas (nothing executes)")
 
-    base_url = os.environ["MODAL_BASE_URL"].rstrip("/").removesuffix("/chat/completions")
-    token = f"{os.environ['MODAL_PROXY_TOKEN_ID']}.{os.environ['MODAL_PROXY_TOKEN_SECRET']}"
-    with patch("bot.agent.create_composio_session", return_value=(object(), stub)):
-        agent = Agent(
-            SimpleNamespace(
-                modal_base_url=base_url,
-                modal_token=token,
-                composio_key="stub",
-                composio_entity_id="eval",
-                model=os.environ["MODAL_MODEL"],
-                timezone=os.environ.get("TEAM_TIMEZONE", "America/Los_Angeles"),
-                reasoning_effort=os.environ.get("MODAL_REASONING_EFFORT") or None,
-                max_tool_calls=int(os.environ.get("MAX_TOOL_CALLS", "40")),
-                max_completion_tokens=int(os.environ.get("MODEL_MAX_TOKENS", "8192")),
-            )
-        )
-        agent._ensure_tools()  # bind the stub while create_composio_session is patched
+    toolset = get_toolset(os.environ["COMPOSIO_API_KEY"])
+    config = SimpleNamespace(
+        ai_settings=settings,
+        model=settings.primary.model,
+        timezone=os.environ.get("TEAM_TIMEZONE", "America/Los_Angeles"),
+        composio_entity="eval",
+        max_tool_calls=int(os.environ.get("MAX_TOOL_CALLS", "40")),
+        instagram_user_id="eval-instagram-account",
+        notion_parent_page_id="",
+    )
+    agent = recording_agent_class()(config, build_registry(toolset))
+    agent.toolset = toolset
+    agent.calls = []
     return agent
+
+
+async def seed_people(session_factory):
+    import sqlalchemy as sa
+
+    async with session_factory() as session:
+        for discord_id, name, email in PEOPLE:
+            await session.execute(
+                sa.text(
+                    "INSERT INTO users (discord_id, display_name, calendar_email) VALUES (:d, :n, :e) "
+                    "ON CONFLICT (discord_id) DO UPDATE SET display_name = :n, calendar_email = :e"
+                ),
+                {"d": discord_id, "n": name, "e": email},
+            )
+        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -151,36 +188,33 @@ def judge(case, tool_calls, final_reply, error):
 
 async def run_case(agent, stub, session_factory, case, run_tag):
     guild = f"eval-{run_tag}-{case['id']}"
-    stub.calls = []
-    stub.fail_mode = bool(case.get("fail_tools"))
-    transcript = []
+    agent.calls = []
+    stub.fail = bool(case.get("fail_tools"))
+    transcript, context = [], []
     error = None
     started = time.monotonic()
 
     try:
         for turn in case["turns"]:
             async with session_factory() as session:
-                reply = await agent.run(
-                    session=session,
-                    request=turn,
-                    guild_id=guild,
-                    channel_id="eval",
-                    discord_user_id="eval-user",
-                    entity_id="eval",
-                )
-            transcript.append({"user": turn, "dobby": reply})
+                result = await agent.run(session, turn, guild, "eval", REQUESTER, context=list(context))
+            transcript.append(
+                {"user": turn, "dobby": result.text, "pending": [p.preview for p in result.pending]}
+            )
+            # Discord context is recent human messages only; Dobby's own replies are not in it.
+            context.append(f"[{datetime.now():%Y-%m-%d %H:%M}] Eval User: {turn}")
     except Exception as exc:  # keep the suite running; the case fails
         error = f"{type(exc).__name__}: {exc}"
 
     duration_ms = int((time.monotonic() - started) * 1000)
     final_reply = transcript[-1]["dobby"] if transcript else ""
-    verdict, reasons = judge(case, stub.calls, final_reply, error)
+    verdict, reasons = judge(case, agent.calls, final_reply, error)
     return {
         "id": case["id"],
         "category": case["category"],
         "verdict": verdict,
         "reasons": reasons,
-        "tool_calls": list(stub.calls),
+        "tool_calls": list(agent.calls),
         "transcript": transcript,
         "duration_ms": duration_ms,
     }
@@ -214,6 +248,8 @@ def write_reports(results, model):
         for t in r["transcript"]:
             lines.append(f"- **user:** {t['user']}")
             lines.append(f"- **dobby:** {t['dobby']}")
+            for preview in t["pending"]:
+                lines.append(f"- **queued for confirmation:** {preview}")
         if r["tool_calls"]:
             lines.append(f"- tools: `{json.dumps(r['tool_calls'])[:500]}`")
         if r["reasons"]:
@@ -229,8 +265,8 @@ def write_reports(results, model):
 async def main_async(args):
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    stub = StubComposioSession()
-    agent = build_agent(stub)
+    stub = StubComposio()
+    agent = build_agent()
     engine = create_async_engine(args.db)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     run_tag = uuid.uuid4().hex[:8]
@@ -245,14 +281,18 @@ async def main_async(args):
     print(f"running {len(cases)} cases against {agent.config.model}\n")
     results = []
     try:
-        for case in cases:
-            result = await run_case(agent, stub, session_factory, case, run_tag)
-            results.append(result)
-            mark = {"PASS": "✅", "WARN": "🟡", "FAIL": "❌"}[result["verdict"]]
-            tools = ", ".join(c["tool"] for c in result["tool_calls"]) or "no tools"
-            print(f"{mark} {result['id']:24} [{result['category']:8}] {tools} ({result['duration_ms']}ms)")
-            for reason in result["reasons"]:
-                print(f"     ↳ {reason}")
+        await seed_people(session_factory)
+        with patch("bot.composio.execute_tool", stub.execute):
+            for case in cases:
+                result = await run_case(agent, stub, session_factory, case, run_tag)
+                results.append(result)
+                mark = {"PASS": "✅", "WARN": "🟡", "FAIL": "❌"}[result["verdict"]]
+                tools = ", ".join(c["tool"] for c in result["tool_calls"]) or "no tools"
+                print(
+                    f"{mark} {result['id']:24} [{result['category']:8}] {tools} ({result['duration_ms']}ms)"
+                )
+                for reason in result["reasons"]:
+                    print(f"     ↳ {reason}")
     finally:
         await engine.dispose()
 
@@ -264,7 +304,7 @@ async def main_async(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run behavioral evals against the live Modal-hosted model.")
+    parser = argparse.ArgumentParser(description="Run behavioral evals against the live model.")
     parser.add_argument("--db", default=os.environ.get("TEST_DATABASE_URL", DEFAULT_DB))
     parser.add_argument("--only", action="append", help="run only these case ids (repeatable)")
     args = parser.parse_args()

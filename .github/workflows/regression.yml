@@ -1,0 +1,27 @@
+name: System regression tests
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  regression:
+    name: Regression | Docker, Bot, Dashboard, Frontend, Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run 30 regression scenarios
+        run: python test_regression/run.py
+      - name: Add test results to GitHub check summary
+        if: always()
+        run: python test_regression/report.py
+      - name: Upload JUnit results and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-regression-results
+          path: test_regression/artifacts/
+          retention-days: 14

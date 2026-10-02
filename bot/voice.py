@@ -18,69 +18,53 @@ RESPONSE_DIR = Path(__file__).parent / "responses"
 # Placeholders each key is allowed to use. Keys absent here take no placeholders.
 FIELDS = {
     "needs_help": {"question"},
-    "context_used": {"count"},
-    "events_found": {"count", "days"},
-    "ask_email": {"names"},
-    "contact_saved": {"name"},
-    "contact_removed": {"name"},
-    "contact_not_saved": {"name"},
-    "contact_unknown": {"name"},
-    "no_matching_event": {"title"},
-    "confirm_event_match": {"title", "start"},
+    "email_shown": {"email"},
+    "published": {"label"},
+    "publish_failed": {"label"},
 }
 
 # Used when a file is missing or has no usable line. Must format with the same FIELDS.
 FALLBACK = {
-    "working": "Dobby is on it! Dobby will prepare a meeting preview here…",
-    "preview_intro": "Dobby has prepared a meeting proposal! Please check the details, if you please.",
-    "preview_outro": (
-        "Dobby will wait for your confirmation before changing anything. "
-        "Confirm within 2 minutes. Times include their UTC offset."
-    ),
-    "confirm_instructions": "React with 🟢 to confirm or 🔴 to cancel. Dobby is waiting.",
-    "confirm_expired": "Dobby waited 2 minutes and heard nothing, so this preview has expired.",
-    "context_used": "Used {count} recent text messages from the requesting channel.",
-    "permission_missing": (
-        "Dobby needs permission to send messages, send messages in threads, add reactions, "
-        "and read history in this channel."
-    ),
+    "calendar_cancelled": "Dobby has cancelled the request. No calendar change made, Dobby promises.",
+    "calendar_deleted": "Dobby has deleted the meeting, as you asked.",
+    "calendar_updated": "Dobby has updated the meeting! Everything is in its proper place now.",
+    "calendar_created": "Dobby has created the meeting! Happy to help, Dobby is.",
+    "calendar_confirm_instructions": "React with 🟢 to confirm or 🔴 to cancel. Dobby is waiting.",
+    "calendar_preview_outro": "Dobby will wait for your confirmation before changing anything. Confirm within 2 minutes. Times include their UTC offset.",
+    "calendar_preview_intro": "Dobby has prepared a meeting proposal! Please check the details, if you please.",
+    "working": "Dobby is on it! Dobby will reply here shortly…",
     "cooldown": "One moment, if you please! Dobby needs 10 seconds between requests.",
     "not_authorized": "Dobby is sorry, but you are not authorized to use this calendar here.",
-    "busy": "The bot is busy. Please try again shortly.",
-    "created": "Dobby has created the meeting! Happy to help, Dobby is.",
-    "updated": "Dobby has updated the meeting! Everything is in its proper place now.",
-    "deleted": "Dobby has deleted the meeting, as you asked.",
-    "cancelled": "Dobby has cancelled the request. No calendar change made, Dobby promises.",
-    "confirm_unusable": (
-        "Dobby cannot use this confirmation, sorry! It is not authorized, already used, or expired."
-    ),
-    "apply_failed_suffix": "Check /events before retrying; a network failure may occur after a write.",
     "needs_help": "Dobby needs your help with this, if you please. {question}",
     "generic_failure": (
         "Oh dear, Dobby could not complete the request. "
         "Check API quota, credentials and connectivity, then try again."
     ),
-    "events_found": "Dobby found {count} events in the next {days} days! Full IDs in attachment.",
-    "events_none": "Dobby found no upcoming events. A little breathing room for everyone!",
     "help_intro": "Dobby is happy to help with your meetings! Here is how to ask, if you please.",
-    "ask_email": "Dobby does not know an email for {names}. Reply here with it, if you please.",
-    "contact_saved": "Dobby has remembered {name}'s email. Dobby never forgets a friend!",
-    "contact_invalid_email": "Dobby could not find an email address in that. Try `Name: name@example.com`.",
-    "contact_removed": "Dobby has forgotten {name}'s email, as you asked.",
-    "contact_not_saved": (
-        "Dobby will use {name}'s email for this meeting, but could not write it to memory. "
-        "Dobby's data folder is not writable; please tell the administrator."
+    "email_saved": "Dobby has saved your calendar email. Dobby will invite you with it from now on!",
+    "email_removed": "Dobby has cleared your calendar email, as you asked.",
+    "email_shown": "Dobby invites you with {email}.",
+    "email_none": "Dobby has no calendar email for you yet. Use `/email action:set email:you@uw.edu`.",
+    "email_invalid": "Dobby could not read that as an email address. Try `you@uw.edu`.",
+    "email_not_registered": (
+        "Dobby does not have you on the roster yet. Ask an admin to add your Discord ID on the dashboard."
     ),
-    "contact_unknown": "Dobby has no saved email for {name}.",
-    "contacts_empty": "Dobby has not learned any emails yet.",
-    "contacts_list_intro": "Here are the people Dobby knows, if you please:",
-    "ask_title": "Which meeting does Dobby need? Reply with its title, if you please.",
-    "choose_event_intro": "Dobby found more than one likely meeting. Reply with the number, if you please:",
-    "no_matching_event": "Dobby searched but found no upcoming meeting like “{title}”.",
-    "confirm_event_match": "Dobby found “{title}” starting {start}. Is this the right meeting?",
-    "capabilities_intro": "Dobby would be delighted to explain! Here is what Dobby can do for you.",
-    "chat_fallback": "Dobby is not quite sure how to answer that, but Dobby is very happy you asked!",
-    "farewell": "Dobby is going now! Dobby has socks to fold and a calendar to guard.",
+    "preview_intro": "Dobby has prepared this. Press Confirm to publish it or Cancel to discard it.",
+    "published": "Dobby has published the {label}!",
+    "publish_failed": "Dobby could not publish the {label}. Nothing went out; please try again later.",
+    "cancelled": "Dobby has discarded the draft. Nothing was published.",
+    "confirm_expired": "Dobby waited 2 minutes and heard nothing, so this draft has expired.",
+    "confirm_not_requester": "Only the person who asked can confirm or cancel this, if you please.",
+    "model_busy": "Dobby's magic is worn thin just now. Please ask again in a moment, if you please.",
+    "model_rejected": (
+        "Oh dear! Dobby's magic refused that request. This is Dobby's fault, not yours — "
+        "an admin should check the bot logs."
+    ),
+    "no_answer": "Dobby's magic gave back nothing at all. Please ask again, perhaps more simply?",
+    "done": "Dobby has done it!",
+    "tool_limit": (
+        "Oh dear, Dobby tried a great many things and must stop. Please break the request into smaller steps."
+    ),
 }
 
 

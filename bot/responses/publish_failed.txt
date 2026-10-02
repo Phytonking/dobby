@@ -1,0 +1,20 @@
+Dobby could not publish the {label}. Nothing went out; please try again later.
+Oh dear, the {label} did not go through. Nothing was posted. Try again soon.
+Dobby is sorry: publishing the {label} failed. Nothing is live.
+The {label} could not be published. Dobby posted nothing; please retry later.
+Dobby tried, but the {label} was rejected. Nothing went out.
+Publishing the {label} failed on the other end. Nothing was posted.
+Dobby could not get the {label} out. Nothing is live; try again in a bit.
+The service refused the {label}. Dobby published nothing.
+Dobby hit an error publishing the {label}. Nothing went out.
+No luck: the {label} did not publish. Nothing is live.
+Dobby's attempt to publish the {label} failed. Please try again later.
+The {label} stayed in Dobby's hands; publishing failed. Nothing went out.
+Dobby is sorry, the {label} could not be posted. Nothing is live.
+Something went wrong publishing the {label}. Dobby posted nothing.
+The {label} did not make it out. Dobby will try again if you ask.
+Dobby could not complete the {label}. Nothing was published.
+Publishing failed for the {label}. Dobby left nothing behind.
+Dobby was turned away publishing the {label}. Nothing went live.
+The {label} could not be sent. Dobby published nothing; check the connection on the dashboard.
+Dobby failed to publish the {label}. Nothing is out; an admin may need to reconnect the account.

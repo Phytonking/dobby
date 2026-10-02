@@ -1,54 +1,22 @@
 name: Publish Docker image
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
   group: dobby-image-main
   cancel-in-progress: false
 jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - run: pip install -r requirements-dev.txt
-      - run: python scripts/check_secrets.py
-      - run: ruff check bot scripts tests dashboard/tests
-      - run: ruff format --check bot scripts tests dashboard/tests
-      - run: python -m pytest -q
-      - run: python -m pytest dashboard/tests -q
-      - run: docker compose --env-file .env.example config --quiet
-        env:
-          DISCORD_TOKEN: ci-placeholder
-          DISCORD_GUILD_ID: "0"
-          MODAL_BASE_URL: https://ci-placeholder.modal.direct/v1
-          MODAL_PROXY_TOKEN_ID: ci-placeholder
-          MODAL_PROXY_TOKEN_SECRET: ci-placeholder
-          MODAL_MODEL: ci-placeholder
-          COMPOSIO_API_KEY: ci-placeholder
-          SECRET_KEY: ci-placeholder
-      - run: docker compose --env-file .env.example -f compose.auth.yaml config --quiet
-        env:
-          DISCORD_TOKEN: ci-placeholder
-          DISCORD_GUILD_ID: "0"
-          MODAL_BASE_URL: https://ci-placeholder.modal.direct/v1
-          MODAL_PROXY_TOKEN_ID: ci-placeholder
-          MODAL_PROXY_TOKEN_SECRET: ci-placeholder
-          MODAL_MODEL: ci-placeholder
-          COMPOSIO_API_KEY: ci-placeholder
-          SECRET_KEY: ci-placeholder
   publish:
     if: github.ref == 'refs/heads/main'
-    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      deployments: write
+    environment:
+      name: github-packages
+      url: https://github.com/${{ github.repository }}/pkgs/container/${{ github.event.repository.name }}
     steps:
       - uses: actions/checkout@v4
       - name: Set lowercase image name
@@ -63,7 +31,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - name: Publish tested bot image
+        id: publish
+        uses: docker/build-push-action@v6
         with:
           context: .
           # Pinned so a new final stage can never publish a test image.
@@ -72,6 +42,29 @@ jobs:
           push: true
           tags: |
             ${{ steps.image.outputs.name }}:main
+            ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Summarize package deployment
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          REVISION: ${{ github.sha }}
+        run: |
+          {
+            echo '## Published bot package'
+            echo
+            echo "Built from tested commit: \`$REVISION\`"
+            echo
+            echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`"
+            echo "- Rolling tags: \`$IMAGE:main\`, \`$IMAGE:latest\`"
+            echo "- Commit tag: \`$IMAGE:sha-$REVISION\`"
+            echo "- Digest: \`$IMAGE@$DIGEST\`"
+            echo
+            echo 'Pull with:'
+            echo '```sh'
+            echo "docker pull $IMAGE:main"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

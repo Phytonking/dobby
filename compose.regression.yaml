@@ -1,0 +1,45 @@
+# Standalone, isolated test deployment. Never reads the developer's .env.
+services:
+  postgres:
+    extends: {file: compose.yaml, service: postgres}
+  migrate:
+    extends: {file: compose.yaml, service: migrate}
+  bot:
+    extends: {file: compose.yaml, service: bot}
+    image: dobby-regression-bot:local
+    volumes:
+      - ./test_regression:/test_regression:ro
+    command: [python, /test_regression/bot_smoke.py]
+  dashboard:
+    extends: {file: compose.yaml, service: dashboard}
+    image: dobby-regression-dashboard:local
+    ports: !reset []
+  frontend:
+    extends: {file: compose.yaml, service: frontend}
+    image: dobby-regression-frontend:local
+    ports: !reset []
+    # Same host, separate ports, matching the supported LAN cookie deployment.
+    network_mode: service:dashboard
+    environment:
+      HOSTNAME: 0.0.0.0
+  regression:
+    build:
+      context: .
+      dockerfile: test_regression/Dockerfile
+    environment:
+      DOBBY_REGRESSION: "1"
+      DATABASE_URL: postgresql+asyncpg://dobby:regression-only-password@postgres:5432/dobby
+      SECRET_KEY: regression-only-cookie-secret
+      AUTH_MODE: local
+      DASHBOARD_URL: http://dashboard:3000
+      DOBBY_ENV_FILE: /nonexistent.env
+      COMPOSIO_API_KEY: regression-composio-key
+    volumes:
+      - ./test_regression:/app/test_regression:ro
+    shm_size: 256m
+    command: [python, -m, pytest, test_regression, -v, --tb=short, -p, no:cacheprovider]
+volumes:
+  pgdata:
+networks:
+  default:
+    internal: true

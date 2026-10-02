@@ -8,6 +8,7 @@ data/
 *.pem
 *.key
 .venv/
+.venv-dashboard/
 __pycache__/
 .pytest_cache/
 *.log
@@ -17,3 +18,7 @@ gha-creds-*.json
 .docker-test/
 frontend/node_modules/
 /evals/
+frontend/.next/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+test_regression/artifacts/

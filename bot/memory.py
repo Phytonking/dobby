@@ -1,104 +1,128 @@
+"""Postgres lookups the bot needs: who people are, their calendar emails, and the audit trail.
+
+No message content is stored here: channel context comes live from Discord (bot/context.py) and
+the audit trail records which tool ran, not what it was asked or answered.
+"""
+
 from difflib import SequenceMatcher
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
-
-
-async def load_history(session: AsyncSession, guild_id: str, channel_id: str, limit: int = 12) -> list[dict]:
-    result = await session.execute(
-        sa.text(
-            "SELECT role, content, tool_name, tool_input, tool_result "
-            "FROM conversation_history "
-            "WHERE guild_id = :g AND channel_id = :c "
-            "ORDER BY created_at DESC LIMIT :lim"
-        ),
-        {"g": guild_id, "c": channel_id, "lim": limit},
-    )
-    rows = result.mappings().all()
-    return [dict(r) for r in reversed(rows)]
-
-
-async def append_turn(
-    session: AsyncSession,
-    guild_id: str,
-    channel_id: str,
-    role: str,
-    content: str | None = None,
-    tool_name: str | None = None,
-    tool_input: dict | None = None,
-    tool_result: dict | None = None,
-) -> None:
-    # CAST(... AS jsonb) instead of ::jsonb — SQLAlchemy text() does not parse
-    # ":param::type" as a bind param and ships the literal ":tool_input::jsonb"
-    # to Postgres, which is a syntax error on every insert.
-    await session.execute(
-        sa.text(
-            "INSERT INTO conversation_history (guild_id, channel_id, role, content, tool_name, tool_input, tool_result) "
-            "VALUES (:g, :c, :role, :content, :tool_name, CAST(:tool_input AS jsonb), CAST(:tool_result AS jsonb))"
-        ),
-        {
-            "g": guild_id,
-            "c": channel_id,
-            "role": role,
-            "content": content,
-            "tool_name": tool_name,
-            "tool_input": __import__("json").dumps(tool_input) if tool_input is not None else None,
-            "tool_result": __import__("json").dumps(tool_result) if tool_result is not None else None,
-        },
-    )
 
 
 def _normalize(name: str) -> str:
     return " ".join(str(name).split()).lower()
 
 
-async def lookup_contact(session: AsyncSession, guild_id: str, name: str) -> str | None:
+async def find_user_by_discord_id(session: AsyncSession, discord_id: str) -> dict | None:
     result = await session.execute(
-        sa.text("SELECT name_key, display_name, email FROM contacts WHERE guild_id = :g"),
-        {"g": guild_id},
-    )
-    rows = result.mappings().all()
-    key = _normalize(name)
-    # Exact match first
-    for row in rows:
-        if row["name_key"] == key:
-            return row["email"]
-    # Fuzzy match using SequenceMatcher (mirrors contacts.py logic)
-    best_score, best_email = 0.0, None
-    for row in rows:
-        s = SequenceMatcher(None, key, row["name_key"]).ratio()
-        if s > best_score:
-            best_score, best_email = s, row["email"]
-    return best_email if best_score >= 0.6 else None
-
-
-async def save_contact(
-    session: AsyncSession, guild_id: str, name: str, email: str, added_by: str | None = None
-) -> None:
-    display = " ".join(str(name).split())
-    name_key = _normalize(display)
-    await session.execute(
-        sa.text(
-            "INSERT INTO contacts (guild_id, name_key, display_name, email, added_by) "
-            "VALUES (:g, :nk, :dn, :email, :ab) "
-            "ON CONFLICT (guild_id, name_key) DO UPDATE SET display_name = EXCLUDED.display_name, email = EXCLUDED.email, added_by = EXCLUDED.added_by"
-        ),
-        {"g": guild_id, "nk": name_key, "dn": display, "email": email, "ab": added_by},
-    )
-
-
-async def list_contacts(session: AsyncSession, guild_id: str) -> list[dict]:
-    result = await session.execute(
-        sa.text("SELECT display_name, email FROM contacts WHERE guild_id = :g ORDER BY display_name"),
-        {"g": guild_id},
-    )
-    return [dict(r) for r in result.mappings().all()]
-
-
-async def load_guild_settings(session: AsyncSession, guild_id: str) -> dict | None:
-    result = await session.execute(
-        sa.text("SELECT * FROM guild_settings WHERE guild_id = :g"),
-        {"g": guild_id},
+        sa.text("SELECT display_name, calendar_email FROM users WHERE discord_id = :d"),
+        {"d": str(discord_id)},
     )
     row = result.mappings().first()
     return dict(row) if row else None
+
+
+async def find_user_by_name(session: AsyncSession, name: str) -> dict | None:
+    """The user whose display name best matches `name`, or None.
+
+    Exact match first, then a first name that belongs to exactly one person, then a fuzzy
+    match. A first name shared by several people is ambiguous and returns None rather than a
+    guess, since the result becomes a calendar invitation. Only users with a calendar email
+    are candidates, since that is what callers need.
+    """
+    result = await session.execute(
+        sa.text(
+            "SELECT display_name, calendar_email FROM users "
+            "WHERE calendar_email IS NOT NULL AND display_name IS NOT NULL"
+        )
+    )
+    rows = [dict(r) for r in result.mappings().all()]
+    key = _normalize(name)
+    if not key:
+        return None
+    for row in rows:
+        if _normalize(row["display_name"]) == key:
+            return row
+    by_first = [r for r in rows if _normalize(r["display_name"]).split(" ")[0] == key]
+    if len(by_first) == 1:
+        return by_first[0]
+    if len(by_first) > 1:
+        return None
+    best_score, best_row = 0.0, None
+    for row in rows:
+        score = SequenceMatcher(None, key, _normalize(row["display_name"])).ratio()
+        if score > best_score:
+            best_score, best_row = score, row
+    return best_row if best_score >= 0.6 else None
+
+
+async def set_calendar_email(session: AsyncSession, discord_id: str, email: str | None) -> int:
+    """Set or clear a user's calendar email. Returns rows changed: 0 means not registered."""
+    result = await session.execute(
+        sa.text(
+            "UPDATE users SET calendar_email = :e, calendar_email_updated_at = CURRENT_TIMESTAMP WHERE discord_id = :d"
+        ),
+        {"e": email, "d": str(discord_id)},
+    )
+    return result.rowcount
+
+
+async def save_calendar_email(
+    session: AsyncSession,
+    discord_id: str,
+    email: str,
+    display_name: str,
+    *,
+    observed_at=None,
+    replace_name=True,
+) -> bool:
+    """Self-registration, keyed only by the authenticated Discord author. Never alter roles/login fields."""
+    result = await session.execute(
+        sa.text(
+            "INSERT INTO users (discord_id, display_name, calendar_email, calendar_email_updated_at) "
+            "VALUES (:d, :n, :e, :at) "
+            "ON CONFLICT (discord_id) DO UPDATE SET calendar_email = :e, "
+            "display_name = CASE WHEN :rename THEN :n ELSE users.display_name END, "
+            "calendar_email_updated_at = :at WHERE users.calendar_email_updated_at IS NULL "
+            "OR users.calendar_email_updated_at < :at OR :manual"
+        ),
+        {
+            "d": str(discord_id),
+            "n": display_name,
+            "e": email,
+            "at": observed_at or datetime.now(timezone.utc),
+            "manual": observed_at is None,
+            "rename": replace_name,
+        },
+    )
+    return bool(result.rowcount)
+
+
+async def record_action(
+    session: AsyncSession,
+    *,
+    discord_id: str,
+    guild_id: str,
+    channel_id: str,
+    tool: str,
+    status: str,
+    duration_ms: int,
+) -> None:
+    """One audit row per tool call (metadata only); the dashboard's audit page reads these."""
+    await session.execute(
+        sa.text(
+            "INSERT INTO agent_actions "
+            "(user_id, discord_id, guild_id, channel_id, tool, status, duration_ms) "
+            "VALUES ((SELECT id FROM users WHERE discord_id = :d), :d, :g, :c, :tool, :status, :ms)"
+        ),
+        {
+            "d": str(discord_id),
+            "g": guild_id,
+            "c": channel_id,
+            "tool": tool,
+            "status": status,
+            "ms": duration_ms,
+        },
+    )

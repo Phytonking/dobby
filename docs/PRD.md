@@ -9,7 +9,7 @@ Dobby is a Discord bot for a UW student group that acts as an AI agent wired to 
 - Replace one-shot Gemini planning with a multi-step ReAct agent loop capable of using multiple tools per request
 - Handle Google Calendar, GitHub, and Notion operations through a single Composio integration layer
 - Provide a web dashboard for admins to manage user access, account connections, and guild settings
-- Restrict dashboard access to pre-registered UW students only
+- Restrict dashboard access to pre-registered members from any email domain
 - Persist conversation memory and agent actions in Postgres
 
 ---
@@ -18,10 +18,10 @@ Dobby is a Discord bot for a UW student group that acts as an AI agent wired to 
 
 | Role | Description |
 |------|-------------|
-| `admin` | Full dashboard access. Can pre-register users, connect integrations, modify guild settings, view audit log. Must be registered first by the bootstrap admin. |
+| `admin` | Full dashboard access. Can pre-register users, connect integrations, modify guild settings, view audit log. Created by OAuth bootstrap, the local-admin CLI, or promoted by an existing admin. |
 | `student` | Dashboard access after admin pre-registration. Can connect their own integrations. Cannot manage other users or guild settings. |
 
-The first admin is seeded via `BOOTSTRAP_ADMIN_EMAIL` in the environment. All other admins are promoted by an existing admin.
+With OAuth enabled, `BOOTSTRAP_ADMIN_EMAIL` creates/promotes the matching user only when no admin exists. Local admins are created/reset with `python -m dashboard.local_admin USERNAME`; `--email` attaches credentials to an existing Google user. Existing admins may promote users in the dashboard.
 
 ---
 
@@ -29,23 +29,32 @@ The first admin is seeded via `BOOTSTRAP_ADMIN_EMAIL` in the environment. All ot
 
 ### Web Dashboard
 
-Two OAuth providers. Both paths converge on the same `users` table check.
+`AUTH_MODE` selects `oauth` (default), `local`, or `both`. All enabled login methods use the same `users` and `sessions` tables and role checks. No public signup is available. Switching modes disables the excluded login routes and existing sessions.
 
 **Google OAuth**
 - Scope: `openid email profile`
-- Hosted domain enforced at the OAuth level: `hd=uw.edu`
-- Google rejects non-UW accounts before the callback fires
+- No hosted-domain restriction; Google accounts from any domain are accepted
+- Backend requires a verified Google email
 - Backend additionally checks `users.uw_email` — must be pre-registered
 
 **Discord OAuth**
 - Scope: `identify email`
 - Backend checks `users.discord_id` — must be pre-registered
-- Student can link both providers to the same account after first login
+- An admin registers the Discord ID on the same user row to allow both OAuth providers
+
+**Local username/password**
+- Available in `local` or `both`; requires loopback/private-network clients at login and on each authenticated request
+- Local mode restricts the entire API to those networks; use a LAN firewall because Docker/proxies can mask the client IP
+- Usernames: 3-64 letters, digits, dots, underscores or hyphens; normalized lowercase
+- Passwords: 12-256 characters, prompted by CLI, stored only as salted scrypt hashes
+- Invalid credentials return 401; five attempts per source IP per minute, then 429 (single-process limiter, reset on restart)
+- CLI password reset revokes existing sessions; no browser password reset
+- Local login returns 200 and sets the session cookie; frontend navigates to the dashboard
 
 **Session**
 - httpOnly cookie containing a signed session token (stored in `sessions` table)
-- 7-day expiry, refreshed on each request
-- Logout deletes the session row
+- Fixed 7-day expiry from login (not refreshed on each request)
+- Logout deletes the session row, clears the cookie, and returns 204; the frontend navigates to `/login`
 
 ### Discord Bot Access
 
@@ -123,9 +132,11 @@ All tools provided by Composio. Gemini sees them as function declarations.
 | Path | Access | Description |
 |------|--------|-------------|
 | `/` | public | Landing — redirect to `/login` if unauthenticated |
-| `/login` | public | Choose Google or Discord login |
-| `/auth/google` | public | Google OAuth callback |
-| `/auth/discord` | public | Discord OAuth callback |
+| `/login` | public | Show OAuth, local username/password, or both according to `/auth/methods` |
+| `/auth/methods` | public | GET enabled login methods |
+| `/auth/local` | local network | POST username/password when enabled |
+| `/auth/google` | public | Start Google OAuth; callback is `/auth/google/callback` |
+| `/auth/discord` | public | Start Discord OAuth; callback is `/auth/discord/callback` |
 | `/dashboard` | authenticated | Home — connected integrations, recent activity |
 | `/integrations` | authenticated | Connect / disconnect Google Calendar, GitHub, Notion |
 | `/admin/users` | admin | Pre-register students, promote/demote admins, revoke access |
@@ -135,8 +146,8 @@ All tools provided by Composio. Gemini sees them as function declarations.
 
 ### Admin: User Management
 
-- Table of pre-registered users (name, UW email, Discord ID, role, added by, date)
-- Add user form: UW email required, Discord ID optional, role selector
+- Table of pre-registered users (name, Google email, Discord ID, role, added by, date)
+- Add user form: Google email required, Discord ID optional, role selector
 - Remove user (revokes dashboard access; does not ban from Discord bot)
 - Promote/demote between student and admin
 
@@ -172,7 +183,9 @@ All tools provided by Composio. Gemini sees them as function declarations.
 -- Pre-registered users (admin-managed allowlist)
 users (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  uw_email      text UNIQUE,
+  uw_email      text UNIQUE,  -- legacy name: Google email from any domain
+  local_username text UNIQUE, -- nullable, added in migration 003
+  password_hash text,        -- nullable scrypt hash, never exposed in APIs
   discord_id    text UNIQUE,
   display_name  text NOT NULL,
   role          text NOT NULL DEFAULT 'student',  -- 'admin' | 'student'
@@ -299,14 +312,16 @@ TEAM_TIMEZONE=America/Los_Angeles
 
 **Dashboard**
 ```
-SECRET_KEY=          # for signing session cookies
+AUTH_MODE=oauth     # oauth, local, or both
+SECRET_KEY=          # required for all login modes
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 COMPOSIO_API_KEY=
 DASHBOARD_URL=       # e.g. https://dobby.uw.edu
-BOOTSTRAP_ADMIN_EMAIL=  # first admin UW email, seeded on startup
+BOOTSTRAP_ADMIN_EMAIL=  # optional OAuth seed; skipped in local mode or if an admin exists
+API_URL=http://localhost:8000  # use server LAN address for another machine; rebuild frontend
 ```
 
 ---
@@ -317,7 +332,7 @@ BOOTSTRAP_ADMIN_EMAIL=  # first admin UW email, seeded on startup
 |-------|-----------|
 | Bot | Python 3.12+, discord.py 2.x |
 | Agent LLM | Google Gemini (google-genai) |
-| Tool integration | Composio (composio-core) |
+| Tool integration | Composio (`composio` SDK) |
 | Dashboard API | FastAPI, authlib, SQLAlchemy 2 (async) |
 | Database | PostgreSQL 16 |
 | Migrations | Alembic |

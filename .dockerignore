@@ -3,6 +3,7 @@
 .env*
 secrets
 .venv
+.venv-dashboard
 **/__pycache__
 *credentials*.json
 *token*.json
@@ -12,3 +13,4 @@ gha-creds-*.json
 .ruff_cache
 .docker-test
 .pytest_cache
+test_regression/artifacts

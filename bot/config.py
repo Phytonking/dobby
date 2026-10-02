@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from .models import ConfigError
+from .AIModels import ModelSettings
 
 
 def ids(name):
@@ -16,32 +17,29 @@ class Config:
     users: frozenset[int]
     roles: frozenset[int]
     channels: frozenset[int]
-    modal_base_url: str
-    modal_token: str
+    gemini_key: str
     composio_key: str
-    composio_entity_id: str
     model: str
     timezone: str
     mention_channels: frozenset[int] = frozenset()
-    context_limit: int = 12
-    reasoning_effort: str | None = None
+    # The one Composio entity that owns Dobby's service accounts; shared with the dashboard.
+    composio_entity: str = "dobby"
+    # How many recent human messages Dobby reads from the channel before each request.
+    context_limit: int = 50
+    # Instagram Business/Creator account ID the connected Meta app manages (needed to publish).
+    instagram_user_id: str = ""
+    # Optional Notion page under which /notion note creates pages.
+    notion_parent_page_id: str = ""
+    model_backup: str = "gemini-3.1-flash-lite"
+    ai_settings: ModelSettings | None = None
+    # The agent loop's only backstop against a model that keeps calling tools.
     max_tool_calls: int = 40
-    max_completion_tokens: int = 8192
 
     @classmethod
     def load(cls):
-        # Compose mounts this file read-only; credential values never enter image metadata.
+        # Direct runs load .env; Compose supplies settings through the process environment.
         load_dotenv(os.getenv("DOBBY_ENV_FILE", ".env"), override=False, interpolate=False)
-        required = [
-            "DISCORD_TOKEN",
-            "DISCORD_GUILD_ID",
-            "MODAL_BASE_URL",
-            "MODAL_PROXY_TOKEN_ID",
-            "MODAL_PROXY_TOKEN_SECRET",
-            "MODAL_MODEL",
-            "COMPOSIO_API_KEY",
-            "DATABASE_URL",
-        ]
+        required = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "COMPOSIO_API_KEY", "DATABASE_URL"]
         missing = [k for k in required if not os.getenv(k)]
         if missing:
             raise ConfigError("Missing configuration: " + ", ".join(missing))
@@ -61,34 +59,37 @@ class Config:
             ZoneInfo(zone)
         except Exception:
             raise ConfigError(f"TEAM_TIMEZONE is not a known IANA zone: {zone}") from None
-        context_limit = int(os.getenv("CONTEXT_MESSAGE_LIMIT", "12"))
-        # No per-request timeout wraps the agent loop, so this is the only
-        # backstop against a confused model looping forever — real cost on
-        # both the model endpoint and any destructive tool it keeps calling.
-        # Generous by default, not unbounded; raise via env if you need more.
-        max_tool_calls = int(os.getenv("MAX_TOOL_CALLS", "40"))
-        max_completion_tokens = int(os.getenv("MODEL_MAX_TOKENS", "8192"))
-        # The curl example's endpoint URL ends in /chat/completions; the openai
-        # SDK's base_url wants the prefix up to /v1 and appends that itself.
-        base_url = os.environ["MODAL_BASE_URL"].rstrip("/").removesuffix("/chat/completions")
-        token = f"{os.environ['MODAL_PROXY_TOKEN_ID']}.{os.environ['MODAL_PROXY_TOKEN_SECRET']}"
+        try:
+            context_limit = int(os.getenv("CONTEXT_MESSAGE_LIMIT", "50"))
+        except ValueError:
+            context_limit = -1
+        if not 0 <= context_limit <= 500:
+            raise ConfigError("CONTEXT_MESSAGE_LIMIT must be a whole number from 0 to 500.")
+        try:
+            max_tool_calls = int(os.getenv("MAX_TOOL_CALLS", "40"))
+        except ValueError:
+            max_tool_calls = 0
+        if not 1 <= max_tool_calls <= 500:
+            raise ConfigError("MAX_TOOL_CALLS must be a whole number from 1 to 500.")
+        ai_settings = ModelSettings.from_env()
         return cls(
             os.environ["DISCORD_TOKEN"],
             guild,
             users,
             roles,
             channels,
-            base_url,
-            token,
+            os.getenv("GEMINI_API_KEY", ""),
             os.environ["COMPOSIO_API_KEY"],
-            os.getenv("COMPOSIO_ENTITY_ID", "dobby"),
-            os.environ["MODAL_MODEL"],
+            ai_settings.primary.model,
             zone,
             mentions,
+            os.getenv("COMPOSIO_ENTITY_ID", "dobby").strip() or "dobby",
             context_limit,
-            os.getenv("MODAL_REASONING_EFFORT") or None,
+            os.getenv("INSTAGRAM_USER_ID", "").strip(),
+            os.getenv("NOTION_PARENT_PAGE_ID", "").strip(),
+            ai_settings.backup.model if ai_settings.backup else "",
+            ai_settings,
             max_tool_calls,
-            max_completion_tokens,
         )
 
     def mentionable(self, channel):

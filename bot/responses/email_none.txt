@@ -1,0 +1,20 @@
+Dobby has no calendar email for you yet. Use `/email action:set email:you@uw.edu` to add one.
+No address on file! Set one with `/email action:set email:you@uw.edu`.
+Dobby cannot invite you until you set an email: `/email action:set email:you@uw.edu`.
+Dobby knows you, but not your email. Try `/email action:set email:you@uw.edu`.
+Nothing saved yet. `/email action:set email:you@uw.edu` tells Dobby where to invite you.
+Dobby has an empty space where your email should be. `/email action:set email:you@uw.edu` fills it.
+No calendar email yet, if you please. Set one with `/email action:set email:you@uw.edu`.
+Dobby looked and found no address. Use `/email action:set email:you@uw.edu`.
+Your email is not set. `/email action:set email:you@uw.edu` fixes that.
+Dobby would love to invite you but has no address. Try `/email action:set email:you@uw.edu`.
+Dobby has nothing on file for you. `/email action:set email:you@uw.edu` to add one.
+No email saved. Dobby suggests `/email action:set email:you@uw.edu`.
+Dobby is missing your calendar email. Add it with `/email action:set email:you@uw.edu`.
+Empty! Give Dobby an address: `/email action:set email:you@uw.edu`.
+Dobby cannot find an email for you. `/email action:set email:you@uw.edu` will help.
+You have not told Dobby your email yet. `/email action:set email:you@uw.edu`.
+Dobby has no address to invite you with. Set one: `/email action:set email:you@uw.edu`.
+No email in Dobby's records. Add yours with `/email action:set email:you@uw.edu`.
+Dobby's roster has you, but no email. `/email action:set email:you@uw.edu` completes it.
+Dobby needs your calendar email first: `/email action:set email:you@uw.edu`.

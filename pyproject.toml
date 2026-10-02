@@ -1,5 +1,5 @@
 [tool.ruff]
-target-version = "py312"
+target-version = "py312"  # the Docker image; 3.14 formatting broke 3.12 syntax
 line-length = 110
 
 [tool.ruff.lint]

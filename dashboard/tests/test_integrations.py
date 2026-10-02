@@ -1,13 +1,9 @@
-"""Integrations endpoints. Composio is the source of truth; faked at the router's helper boundary."""
+"""Dobby's service-account routes. Composio is faked at the router's helper boundary."""
 
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
-from composio.exceptions import (
-    ComposioConnectedAccountNotRevokableError,
-    ComposioConnectedAccountRevocationNotSupportedError,
-)
 
 from dashboard.auth import get_current_user
 from dashboard.routers import integrations
@@ -19,17 +15,21 @@ MOD = "dashboard.routers.integrations"
 
 @pytest.fixture()
 def as_role(app, client):
-    def login(role):
+    def login(role, db=None):
         user = make_user(role=role)
 
         async def fake_current_user():
             return user
 
         app.dependency_overrides[get_current_user] = fake_current_user
-        return client(FakeDB())
+        return client(db or FakeDB())
 
     with patch(f"{MOD}.COMPOSIO_API_KEY", "test-key"):
         yield login
+
+
+def _get(c, path):
+    return c.get(path, follow_redirects=False)
 
 
 # ---------------------------------------------------------------------------
@@ -37,104 +37,92 @@ def as_role(app, client):
 # ---------------------------------------------------------------------------
 
 
-def _connect(c, headers=None):
-    link = SimpleNamespace(redirect_url="https://connect.composio.dev/link/abc")
-    session = SimpleNamespace(authorize=Mock(return_value=link))
-    with patch(f"{MOD}._get_session", return_value=session):
-        r = c.get("/integrations/googlecalendar/connect", headers=headers or {}, follow_redirects=False)
-    return r, session.authorize
-
-
-def test_connect_requires_admin(as_role):
-    r, authorize = _connect(as_role("student"))
-
-    assert r.status_code == 403
+def test_connect_and_list_are_admin_only(as_role):
+    c = as_role("student")
+    with patch(f"{MOD}._authorize") as authorize:
+        assert _get(c, "/integrations/google_calendar/connect").status_code == 403
+        assert c.get("/integrations").status_code == 403
     authorize.assert_not_called()
 
 
-def test_connect_callback_targets_browser_origin_not_dashboard_url(as_role):
-    # Reproduces the bug: DASHBOARD_URL names another tailnet box, browser is on localhost.
-    with patch(f"{MOD}.DASHBOARD_URL", "http://100.64.0.10:3000"):
-        r, authorize = _connect(as_role("admin"), headers={"x-forwarded-host": "localhost:3000"})
+def test_connect_redirects_to_composio_with_api_callback(as_role):
+    with patch(f"{MOD}._authorize", return_value="https://connect.composio.dev/link/abc") as authorize:
+        r = _get(as_role("admin"), "/integrations/google_calendar/connect")
 
     assert r.status_code == 307
     assert r.headers["location"] == "https://connect.composio.dev/link/abc"
-    assert (
-        authorize.call_args.kwargs["callback_url"]
-        == "http://localhost:3000/api/integrations/googlecalendar/callback"
-    )
+    toolkit, callback = authorize.call_args.args
+    assert toolkit == "googlecalendar"
+    assert callback.endswith("/integrations/google_calendar/callback")
 
 
-def test_connect_callback_honors_forwarded_proto(as_role):
-    headers = {"x-forwarded-host": "dobby.example", "x-forwarded-proto": "https"}
-    _, authorize = _connect(as_role("admin"), headers=headers)
-
-    assert (
-        authorize.call_args.kwargs["callback_url"]
-        == "https://dobby.example/api/integrations/googlecalendar/callback"
-    )
-
-
-def test_connect_without_proxy_headers_falls_back_to_dashboard_url(as_role):
-    with patch(f"{MOD}.DASHBOARD_URL", "http://dash.example:3000"):
-        _, authorize = _connect(as_role("admin"))
-
-    assert (
-        authorize.call_args.kwargs["callback_url"]
-        == "http://dash.example:3000/api/integrations/googlecalendar/callback"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Callback — success or failure comes from Composio, never the redirect params
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "active, outcome",
-    [
-        ({"googlecalendar": "2026-10-01T22:59:43Z"}, "connected"),
-        ({}, "error"),
-        ({"notion": "2026-10-01T22:59:43Z"}, "error"),
-    ],
-)
-def test_callback_reports_composio_state_not_redirect_params(as_role, active, outcome):
+def test_connect_unknown_provider_is_400_and_composio_failure_is_502(as_role):
     c = as_role("admin")
-    with patch(f"{MOD}._active_since", return_value=active):
-        r = c.get("/integrations/googlecalendar/callback?status=success", follow_redirects=False)
+    assert _get(c, "/integrations/dropbox/connect").status_code == 400
+    with patch(f"{MOD}._authorize", side_effect=RuntimeError("down")):
+        assert _get(c, "/integrations/notion/connect").status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# Callback: every failure lands back on the page with a banner, never a JSON error
+# ---------------------------------------------------------------------------
+
+CALLBACK = "/integrations/google_calendar/callback"
+OK_QUERY = "?status=success&connected_account_id=ca_1"
+
+
+@pytest.mark.parametrize("query", ["", "?status=failed&connected_account_id=ca_1", "?status=success"])
+def test_incomplete_oauth_redirects_with_error_without_touching_composio(as_role, query):
+    db = FakeDB()
+    with patch(f"{MOD}._connection_is_active") as active:
+        r = _get(as_role("admin", db), CALLBACK + query)
 
     assert r.status_code == 307
-    assert r.headers["location"] == f"/dashboard/integrations?{outcome}=googlecalendar"
+    assert r.headers["location"].endswith("/dashboard/integrations?error=google_calendar")
+    active.assert_not_called()
+    assert not db.added
 
 
-def test_callback_reports_error_when_composio_unreachable(as_role):
-    c = as_role("admin")
-    with patch(f"{MOD}._active_since", side_effect=RuntimeError("down")):
-        r = c.get("/integrations/googlecalendar/callback", follow_redirects=False)
+@pytest.mark.parametrize("verify", [Mock(return_value=False), Mock(side_effect=RuntimeError("down"))])
+def test_unverified_connection_redirects_with_error_and_records_nothing(as_role, verify):
+    db = FakeDB()
+    with patch(f"{MOD}._connection_is_active", verify):
+        r = _get(as_role("admin", db), CALLBACK + OK_QUERY)
 
-    assert r.headers["location"] == "/dashboard/integrations?error=googlecalendar"
-
-
-# ---------------------------------------------------------------------------
-# List — shared state, visible to every logged-in user
-# ---------------------------------------------------------------------------
+    assert r.headers["location"].endswith("/dashboard/integrations?error=google_calendar")
+    verify.assert_called_once_with("googlecalendar", "ca_1")
+    assert not db.added
 
 
-def test_list_reflects_composio_for_any_logged_in_user(as_role):
-    c = as_role("student")
-    with patch(f"{MOD}._active_since", return_value={"googlecalendar": "2026-10-01T22:25:32Z"}):
-        r = c.get("/integrations")
+def test_verified_connection_is_recorded_and_lands_on_the_canonical_dashboard(as_role, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_URL", "http://100.64.0.10:3000,http://localhost:3000")
+    db = FakeDB(results=[None])
+    with patch(f"{MOD}._connection_is_active", return_value=True):
+        r = _get(as_role("admin", db), CALLBACK + OK_QUERY)
 
-    assert r.status_code == 200
-    body = r.json()
-    assert [i["provider"] for i in body] == ["googlecalendar"]
-    assert body[0]["connected_at"].startswith("2026-10-01T22:25:32")
+    assert r.headers["location"] == "http://100.64.0.10:3000/dashboard/integrations?connected=google_calendar"
+    assert db.committed
+    assert db.added[0].provider == "google_calendar"
 
 
-def test_list_is_502_when_composio_unreachable(as_role):
-    c = as_role("student")
-    with patch(f"{MOD}._active_since", side_effect=RuntimeError("down")):
-        assert c.get("/integrations").status_code == 502
+def test_local_mode_lands_on_localhost_whatever_dashboard_url_says(as_role, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_URL", "http://100.64.0.10:3000")
+    monkeypatch.setenv("LOCAL_MODE", "true")
+    with patch(f"{MOD}._connection_is_active", return_value=True):
+        r = _get(as_role("admin", FakeDB(results=[None])), CALLBACK + OK_QUERY)
+
+    assert r.headers["location"] == "http://localhost:3000/dashboard/integrations?connected=google_calendar"
+
+
+def test_storage_failure_after_verification_redirects_with_error(as_role):
+    class FailingDB(FakeDB):
+        async def commit(self):
+            raise RuntimeError("db down")
+
+    with patch(f"{MOD}._connection_is_active", return_value=True):
+        r = _get(as_role("admin", FailingDB(results=[None])), CALLBACK + OK_QUERY)
+
+    assert r.headers["location"].endswith("/dashboard/integrations?error=google_calendar")
 
 
 # ---------------------------------------------------------------------------
@@ -142,35 +130,45 @@ def test_list_is_502_when_composio_unreachable(as_role):
 # ---------------------------------------------------------------------------
 
 
-def test_disconnect_requires_admin(as_role):
-    c = as_role("student")
-    with patch(f"{MOD}._disconnect") as disconnect:
-        r = c.delete("/integrations/googlecalendar")
-
-    assert r.status_code == 403
+def test_disconnect_is_admin_only(as_role):
+    with patch(f"{MOD}._disconnect_accounts") as disconnect:
+        assert as_role("student").delete("/integrations/google_calendar").status_code == 403
     disconnect.assert_not_called()
 
 
-def test_disconnect_removes_dobbys_composio_connections(as_role):
-    c = as_role("admin")
-    with patch(f"{MOD}._disconnect") as disconnect:
-        r = c.delete("/integrations/googlecalendar")
+def test_disconnect_removes_composio_accounts_then_the_local_row(as_role):
+    row = SimpleNamespace(provider="google_calendar")
+    db = FakeDB(results=[row])
+    with patch(f"{MOD}._disconnect_accounts") as disconnect:
+        r = as_role("admin", db).delete("/integrations/google_calendar")
 
     assert r.status_code == 204
     disconnect.assert_called_once_with("googlecalendar")
+    assert db.deleted == [row]
+
+
+def test_disconnect_without_a_local_row_still_cleans_composio(as_role):
+    # A callback that never landed leaves live Composio connections and no row.
+    db = FakeDB(results=[None])
+    with patch(f"{MOD}._disconnect_accounts") as disconnect:
+        r = as_role("admin", db).delete("/integrations/google_calendar")
+
+    assert r.status_code == 204
+    disconnect.assert_called_once_with("googlecalendar")
+    assert db.deleted == []
+
+
+def test_disconnect_composio_failure_is_502_and_keeps_the_row(as_role):
+    db = FakeDB(results=[SimpleNamespace(provider="notion")])
+    with patch(f"{MOD}._disconnect_accounts", side_effect=RuntimeError("down")):
+        assert as_role("admin", db).delete("/integrations/notion").status_code == 502
+    assert db.deleted == []
 
 
 def test_disconnect_unknown_provider_is_400(as_role):
-    c = as_role("admin")
-    with patch(f"{MOD}._disconnect") as disconnect:
-        assert c.delete("/integrations/dropbox").status_code == 400
+    with patch(f"{MOD}._disconnect_accounts") as disconnect:
+        assert as_role("admin").delete("/integrations/dropbox").status_code == 400
     disconnect.assert_not_called()
-
-
-def test_disconnect_composio_failure_is_502(as_role):
-    c = as_role("admin")
-    with patch(f"{MOD}._disconnect", side_effect=RuntimeError("down")):
-        assert c.delete("/integrations/googlecalendar").status_code == 502
 
 
 # ---------------------------------------------------------------------------
@@ -178,55 +176,32 @@ def test_disconnect_composio_failure_is_502(as_role):
 # ---------------------------------------------------------------------------
 
 
-def _account(id, slug="googlecalendar", created_at="2026-10-01T22:00:00Z"):
-    return SimpleNamespace(id=id, toolkit=SimpleNamespace(slug=slug), created_at=created_at)
-
-
 def _fake_client(*pages):
     listed = [SimpleNamespace(items=items, next_cursor=cursor) for items, cursor in pages]
-    return SimpleNamespace(
-        connected_accounts=SimpleNamespace(list=Mock(side_effect=listed), revoke=Mock(), delete=Mock())
-    )
+    return SimpleNamespace(connected_accounts=SimpleNamespace(list=Mock(side_effect=listed), delete=Mock()))
 
 
-def test_disconnect_revokes_and_deletes_every_account_across_pages():
-    client = _fake_client(([_account("ca_1"), _account("ca_2")], "next"), ([_account("ca_3")], None))
-    client.connected_accounts.revoke.side_effect = [
-        None,
-        ComposioConnectedAccountNotRevokableError("expired"),
-        ComposioConnectedAccountRevocationNotSupportedError("unsupported"),
-    ]
-    with patch(f"{MOD}._client", return_value=client):
-        integrations._disconnect("googlecalendar")
+def test_disconnect_accounts_deletes_every_account_across_pages():
+    accounts = [SimpleNamespace(id=f"ca_{i}") for i in range(3)]
+    client = _fake_client((accounts[:2], "next"), (accounts[2:], None))
+    with patch(f"{MOD}._get_composio", return_value=client):
+        integrations._disconnect_accounts("googlecalendar")
 
     first, second = client.connected_accounts.list.call_args_list
     # No status filter: failed/expired leftovers are removed along with ACTIVE ones.
-    assert first.kwargs == {
-        "user_ids": [integrations.COMPOSIO_ENTITY_ID],
-        "toolkit_slugs": ["googlecalendar"],
-    }
+    assert first.kwargs == {"user_ids": [integrations.ENTITY_ID], "toolkit_slugs": ["googlecalendar"]}
     assert second.kwargs["cursor"] == "next"
-    assert [c.args[0] for c in client.connected_accounts.delete.call_args_list] == ["ca_1", "ca_2", "ca_3"]
+    deleted = [c.kwargs["nanoid"] for c in client.connected_accounts.delete.call_args_list]
+    assert deleted == ["ca_0", "ca_1", "ca_2"]
 
 
-def test_disconnect_does_not_swallow_unexpected_errors():
-    client = _fake_client(([_account("ca_1")], None))
-    client.connected_accounts.revoke.side_effect = RuntimeError("network")
-    with patch(f"{MOD}._client", return_value=client), pytest.raises(RuntimeError):
-        integrations._disconnect("googlecalendar")
+def test_connection_is_active_requires_the_exact_active_account():
+    active = SimpleNamespace(id="ca_1", status="ACTIVE")
+    client = _fake_client(([active], None))
+    with patch(f"{MOD}._get_composio", return_value=client):
+        assert integrations._connection_is_active("notion", "ca_1") is True
 
-    client.connected_accounts.delete.assert_not_called()
-
-
-def test_active_since_keeps_earliest_active_connection_per_toolkit():
-    accounts = [
-        _account("ca_1", created_at="2026-10-01T22:59:00Z"),
-        _account("ca_2", created_at="2026-10-01T22:25:00Z"),
-        _account("ca_3", slug="notion", created_at="2026-09-01T00:00:00Z"),
-    ]
-    client = _fake_client((accounts, None))
-    with patch(f"{MOD}._client", return_value=client):
-        since = integrations._active_since()
-
-    assert since == {"googlecalendar": "2026-10-01T22:25:00Z", "notion": "2026-09-01T00:00:00Z"}
-    assert client.connected_accounts.list.call_args.kwargs["statuses"] == ["ACTIVE"]
+    kwargs = client.connected_accounts.list.call_args.kwargs
+    assert kwargs["connected_account_ids"] == ["ca_1"] and kwargs["statuses"] == ["ACTIVE"]
+    with patch(f"{MOD}._get_composio", return_value=_fake_client(([active], None))):
+        assert integrations._connection_is_active("notion", "ca_other") is False

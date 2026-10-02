@@ -1,68 +1,83 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
-import { Calendar, Github, BookOpen, Plug } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Mail } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
-import type { Integration } from '@/lib/types'
 
-const PROVIDER_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  google_calendar: {
-    label: 'Google Calendar',
-    icon: <Calendar className="h-5 w-5 text-blue-400" />,
-    color: 'text-blue-400',
-  },
-  github: {
-    label: 'GitHub',
-    icon: <Github className="h-5 w-5 text-zinc-300" />,
-    color: 'text-zinc-300',
-  },
-  notion: {
-    label: 'Notion',
-    icon: <BookOpen className="h-5 w-5 text-zinc-100" />,
-    color: 'text-zinc-100',
-  },
-}
+function CalendarEmailCard() {
+  const queryClient = useQueryClient()
+  const { data: user, isLoading } = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const [value, setValue] = useState('')
 
-function IntegrationCard({ integration }: { integration: Integration }) {
-  const meta = PROVIDER_META[integration.provider] ?? {
-    label: integration.provider,
-    icon: <Plug className="h-5 w-5 text-zinc-400" />,
-    color: 'text-zinc-400',
-  }
+  useEffect(() => {
+    setValue(user?.calendar_email ?? '')
+  }, [user?.calendar_email])
+
+  const mutation = useMutation({
+    mutationFn: (calendar_email: string | null) => api.updateMe({ calendar_email }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me'] }),
+  })
+
+  if (isLoading) return <Skeleton className="h-44 w-full" />
+
+  const saved = user?.calendar_email ?? ''
+  const dirty = value.trim() !== saved
 
   return (
     <Card>
-      <CardHeader className="pb-3">
+      <CardHeader>
         <div className="flex items-center gap-3">
-          {meta.icon}
-          <CardTitle className="text-base">{meta.label}</CardTitle>
-          <Badge variant="success" className="ml-auto">
-            Connected
-          </Badge>
+          <Mail className="h-5 w-5 text-indigo-400" />
+          <CardTitle className="text-base">Calendar email</CardTitle>
         </div>
+        <CardDescription className="mt-2">
+          This is the address Dobby invites when someone asks to include you in a meeting.
+          You can also set it in Discord with <code className="text-zinc-300">/email</code>.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="text-xs text-zinc-400">
-          Connected{' '}
-          {new Date(integration.connected_at).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-          })}
-        </p>
+        <form
+          className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault()
+            mutation.mutate(value.trim() || null)
+          }}
+        >
+          <div className="grid flex-1 gap-2">
+            <Label htmlFor="calendar_email">Email</Label>
+            <Input
+              id="calendar_email"
+              type="email"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="you@uw.edu"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </form>
+        {mutation.isError && (
+          <p className="mt-2 text-sm text-red-400">{(mutation.error as Error).message}</p>
+        )}
+        {!saved && !mutation.isPending && (
+          <p className="mt-2 text-xs text-zinc-500">
+            No address yet — Dobby cannot invite you until you add one.
+          </p>
+        )}
       </CardContent>
     </Card>
   )
 }
 
 function MeCard() {
-  const { data: user, isLoading } = useQuery({
-    queryKey: ['me'],
-    queryFn: api.me,
-  })
+  const { data: user, isLoading } = useQuery({ queryKey: ['me'], queryFn: api.me })
 
   if (isLoading) return <Skeleton className="h-20 w-full" />
 
@@ -72,58 +87,18 @@ function MeCard() {
         Welcome back, {user?.display_name ?? 'there'}.
       </h1>
       <p className="mt-1 text-sm text-zinc-400">
-        Manage your integrations and check your recent activity.
+        Keep your calendar email current so Dobby can invite you to meetings.
       </p>
     </div>
   )
 }
 
 export default function DashboardPage() {
-  const { data: integrations, isLoading } = useQuery({
-    queryKey: ['integrations'],
-    queryFn: api.integrations.list,
-  })
-
   return (
     <div className="space-y-8">
       <MeCard />
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-3xl font-bold text-zinc-100">{integrations?.length ?? '—'}</p>
-            <p className="mt-1 text-sm text-zinc-400">Integrations connected</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Connected integrations */}
-      <div>
-        <h2 className="mb-4 text-lg font-semibold text-zinc-100">Connected integrations</h2>
-        {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-28" />
-            ))}
-          </div>
-        ) : integrations && integrations.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {integrations.map((integration) => (
-              <IntegrationCard key={integration.provider} integration={integration} />
-            ))}
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="py-10 text-center">
-              <Plug className="mx-auto mb-3 h-8 w-8 text-zinc-600" />
-              <p className="text-sm text-zinc-400">No integrations connected yet.</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Go to <span className="font-medium text-zinc-300">Integrations</span> to connect your accounts.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+      <div className="max-w-xl">
+        <CalendarEmailCard />
       </div>
     </div>
   )

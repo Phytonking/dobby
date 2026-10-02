@@ -26,10 +26,9 @@ def test_each_pool_has_twenty_distinct_usable_lines(key):
     assert placeholders(FALLBACK[key]) <= allowed
 
 
-def test_preview_outro_keeps_the_facts_users_rely_on():
-    for line in load_lines("preview_outro"):
-        assert "2 minutes" in line
-        assert "UTC offset" in line
+def test_email_none_tells_users_how_to_set_one():
+    for line in load_lines("email_none"):
+        assert "/email action:set" in line
 
 
 def test_say_formats_fields_and_reads_from_disk_each_time():
@@ -49,7 +48,7 @@ def test_unknown_key_or_bad_template_falls_back_without_raising(caplog):
 
 def test_say_varies_between_calls():
     with patch("bot.voice.pick", side_effect=random.Random(1).choice):
-        assert len({say("created") for _ in range(40)}) > 1
+        assert len({say("working") for _ in range(40)}) > 1
 
 
 def test_lines_with_unknown_placeholders_are_skipped(tmp_path):

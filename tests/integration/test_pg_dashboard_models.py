@@ -1,4 +1,4 @@
-"""Dashboard ORM models against real Postgres — UUID/ARRAY/JSONB, constraints."""
+"""Dashboard ORM models against real Postgres — UUIDs, cascades and unique constraints."""
 
 import uuid
 
@@ -41,29 +41,66 @@ def test_user_session_cascade_delete(migrated_db):
     run_db(check)
 
 
-def test_integration_unique_per_user_and_provider(migrated_db):
-    from dashboard.models import Integration, User
+def test_integration_is_one_shared_row_per_provider(migrated_db):
+    from dashboard.models import Integration
 
-    email = f"{uuid.uuid4().hex}@uw.edu"
+    provider = f"svc_{uuid.uuid4().hex[:8]}"
 
     async def check(session):
-        user = User(uw_email=email, display_name="Dup Test", role="student")
-        session.add(user)
-        await session.flush()
-
-        session.add(Integration(user_id=user.id, provider="google", composio_entity_id="e1"))
+        session.add(Integration(provider=provider, composio_entity_id="dobby"))
         await session.commit()
 
-        session.add(Integration(user_id=user.id, provider="google", composio_entity_id="e2"))
+        session.add(Integration(provider=provider, composio_entity_id="dobby"))
         with pytest.raises(IntegrityError):
             await session.commit()
+        await session.rollback()
 
     run_db(check)
 
 
-def test_agent_action_jsonb_round_trip(migrated_db):
-    from sqlalchemy import select
+def test_deleting_the_connecting_admin_keeps_the_integration(migrated_db):
+    from dashboard.models import Integration, User
 
+    provider = f"svc_{uuid.uuid4().hex[:8]}"
+
+    async def check(session):
+        admin = User(uw_email=f"{uuid.uuid4().hex}@uw.edu", display_name="Admin", role="admin")
+        session.add(admin)
+        await session.flush()
+        session.add(Integration(provider=provider, composio_entity_id="dobby", connected_by=admin.id))
+        await session.commit()
+
+        await session.delete(admin)
+        await session.commit()
+
+        row = (
+            await session.execute(
+                sa.text("SELECT connected_by FROM integrations WHERE provider = :p"), {"p": provider}
+            )
+        ).one()
+        assert row.connected_by is None
+
+    run_db(check)
+
+
+def test_local_username_is_unique(migrated_db):
+    from dashboard.models import User
+
+    username = f"admin_{uuid.uuid4().hex[:8]}"
+
+    async def check(session):
+        session.add(User(local_username=username, display_name="First", role="admin"))
+        await session.commit()
+
+        session.add(User(local_username=username, display_name="Second", role="admin"))
+        with pytest.raises(IntegrityError):
+            await session.commit()
+        await session.rollback()
+
+    run_db(check)
+
+
+def test_agent_action_round_trip(migrated_db):
     from dashboard.models import AgentAction
 
     guild = uuid.uuid4().hex
@@ -71,49 +108,20 @@ def test_agent_action_jsonb_round_trip(migrated_db):
     async def check(session):
         session.add(
             AgentAction(
+                discord_id="1",
                 guild_id=guild,
-                tool="GOOGLECALENDAR_CREATE_EVENT",
-                input={"summary": "Sync", "nested": {"k": [1, 2]}},
-                output={"success": True},
+                channel_id="c",
+                tool="NOTION_SEARCH",
                 status="ok",
                 duration_ms=42,
             )
         )
         await session.commit()
 
-        row = (await session.execute(select(AgentAction).where(AgentAction.guild_id == guild))).scalar_one()
-        assert row.input == {"summary": "Sync", "nested": {"k": [1, 2]}}
-        assert row.output == {"success": True}
-
-    run_db(check)
-
-
-def test_guild_settings_array_round_trip(migrated_db):
-    from sqlalchemy import select
-
-    from dashboard.models import GuildSettings
-
-    guild = uuid.uuid4().hex
-
-    async def check(session):
-        session.add(
-            GuildSettings(
-                guild_id=guild,
-                timezone="UTC",
-                model="gemini-test",
-                allowed_role_ids=["1", "2"],
-                admin_role_ids=[],
-                allowed_channel_ids=["9"],
-                mention_channel_ids=[],
-                context_limit=5,
-            )
-        )
-        await session.commit()
-
         row = (
-            await session.execute(select(GuildSettings).where(GuildSettings.guild_id == guild))
+            await session.execute(sa.select(AgentAction).where(AgentAction.guild_id == guild))
         ).scalar_one()
-        assert row.allowed_role_ids == ["1", "2"]
-        assert row.allowed_channel_ids == ["9"]
+        assert (row.tool, row.status, row.duration_ms) == ("NOTION_SEARCH", "ok", 42)
+        assert row.created_at is not None
 
     run_db(check)

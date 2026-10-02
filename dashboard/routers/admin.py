@@ -3,22 +3,21 @@ from typing import Optional
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_admin
 from ..database import get_db
-from ..models import AgentAction, Contact, GuildSettings, User
+from ..models import AgentAction, User
 from ..schemas import (
     AuditLogEntry,
-    ContactOut,
-    GuildSettingsOut,
-    GuildSettingsUpdate,
     PaginatedAudit,
     PaginatedUsers,
     UserCreate,
     UserOut,
     UserRoleUpdate,
+    UserUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +73,7 @@ async def create_user(
             uw_email=body.uw_email,
             discord_id=body.discord_id,
             display_name=body.display_name,
+            calendar_email=body.calendar_email,
             role=body.role,
             added_by=admin.id,
         )
@@ -81,6 +81,9 @@ async def create_user(
         await db.commit()
     except HTTPException:
         raise
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A user with that email or Discord ID already exists") from None
     except Exception:
         logger.exception("Failed to create user")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
@@ -113,6 +116,37 @@ async def delete_user(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
 
 
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: uuid.UUID,
+    body: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    update_data = body.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nothing to update",
+        )
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        for field, value in update_data.items():
+            setattr(user, field, value)
+        db.add(user)
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to update user %s", user_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
+
+    return UserOut.model_validate(user)
+
+
 @router.patch("/users/{user_id}/role", response_model=UserOut)
 async def update_user_role(
     user_id: uuid.UUID,
@@ -140,61 +174,6 @@ async def update_user_role(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
 
     return UserOut.model_validate(user)
-
-
-# ---------------------------------------------------------------------------
-# Guild settings
-# ---------------------------------------------------------------------------
-
-@router.get("/settings/{guild_id}", response_model=GuildSettingsOut)
-async def get_guild_settings(
-    guild_id: str,
-    db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    try:
-        result = await db.execute(
-            select(GuildSettings).where(GuildSettings.guild_id == guild_id)
-        )
-        settings = result.scalar_one_or_none()
-    except Exception:
-        logger.exception("Failed to fetch guild settings for %s", guild_id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
-
-    if settings is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guild settings not found")
-
-    return GuildSettingsOut.model_validate(settings)
-
-
-@router.put("/settings/{guild_id}", response_model=GuildSettingsOut)
-async def upsert_guild_settings(
-    guild_id: str,
-    body: GuildSettingsUpdate,
-    db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    try:
-        result = await db.execute(
-            select(GuildSettings).where(GuildSettings.guild_id == guild_id)
-        )
-        settings = result.scalar_one_or_none()
-
-        update_data = body.model_dump(exclude_unset=True)
-
-        if settings is None:
-            settings = GuildSettings(guild_id=guild_id, **update_data)
-            db.add(settings)
-        else:
-            for field, value in update_data.items():
-                setattr(settings, field, value)
-            db.add(settings)
-        await db.commit()
-    except Exception:
-        logger.exception("Failed to upsert guild settings for %s", guild_id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
-
-    return GuildSettingsOut.model_validate(settings)
 
 
 # ---------------------------------------------------------------------------
@@ -232,48 +211,4 @@ async def list_audit(
         logger.exception("Failed to fetch audit log")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
 
-    items = []
-    for row in rows:
-        # Produce a brief summary of the input without exposing raw data wholesale
-        input_summary: Optional[str] = None
-        if row.input and isinstance(row.input, dict):
-            keys = list(row.input.keys())[:5]
-            input_summary = ", ".join(keys) if keys else None
-
-        items.append(
-            AuditLogEntry(
-                id=row.id,
-                discord_id=row.discord_id,
-                tool=row.tool,
-                status=row.status,
-                duration_ms=row.duration_ms,
-                created_at=row.created_at,
-                input_summary=input_summary,
-            )
-        )
-
-    return PaginatedAudit(total=total, items=items)
-
-
-# ---------------------------------------------------------------------------
-# Contacts
-# ---------------------------------------------------------------------------
-
-@router.get("/contacts/{guild_id}", response_model=list[ContactOut])
-async def list_contacts(
-    guild_id: str,
-    db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    try:
-        result = await db.execute(
-            select(Contact)
-            .where(Contact.guild_id == guild_id)
-            .order_by(Contact.created_at.desc())
-        )
-        contacts = result.scalars().all()
-    except Exception:
-        logger.exception("Failed to fetch contacts for guild %s", guild_id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
-
-    return [ContactOut.model_validate(c) for c in contacts]
+    return PaginatedAudit(total=total, items=[AuditLogEntry.model_validate(r) for r in rows])

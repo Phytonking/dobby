@@ -1,0 +1,20 @@
+Dobby invites you with {email}.
+Your calendar email is {email}, if you please.
+Dobby has {email} on file for you.
+Dobby sends your invitations to {email}.
+Dobby knows you as {email} for meetings.
+Here it is: {email}. That is where Dobby invites you.
+Dobby's records say {email}.
+{email} is the address Dobby uses for you.
+Dobby will invite you at {email}.
+Your invitations go to {email}, as Dobby remembers it.
+Dobby has you down as {email}.
+Dobby uses {email} when someone invites you.
+For meetings, Dobby reaches you at {email}.
+Dobby checked: your email is {email}.
+{email} is what Dobby has for you.
+Dobby keeps {email} as your calendar address.
+Dobby's roster lists you as {email}.
+Your address, if you please: {email}.
+Dobby invites {email} whenever you are asked along.
+Dobby remembers you as {email}.

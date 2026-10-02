@@ -1,9 +1,10 @@
 discord.py>=2.6,<3
-openai>=1.0,<4
+google-genai>=1.0,<2
+httpx>=0.28,<1
 pydantic>=2.11,<3
 python-dotenv>=1.1,<2
 tzdata
-composio>=0.21.0
+composio==0.21.1
 asyncpg>=0.29.0
 sqlalchemy[asyncio]>=2.0.0
 alembic>=1.13.0

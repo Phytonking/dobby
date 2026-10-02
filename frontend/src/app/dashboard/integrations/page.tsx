@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Github, BookOpen } from 'lucide-react'
+import { Calendar, BookOpen, Instagram, Linkedin } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -24,22 +24,29 @@ interface Notice {
 
 const PROVIDERS: ProviderConfig[] = [
   {
-    key: 'googlecalendar',
+    key: 'google_calendar',
     label: 'Google Calendar',
-    description: 'Let Dobby schedule events and check availability on the team calendar.',
+    description: "The team calendar Dobby creates events on. Invitees don't need to connect anything.",
     icon: <Calendar className="h-6 w-6 text-blue-400" />,
-  },
-  {
-    key: 'github',
-    label: 'GitHub',
-    description: 'Connect GitHub to manage repos, issues, and pull requests via Dobby.',
-    icon: <Github className="h-6 w-6 text-zinc-200" />,
   },
   {
     key: 'notion',
     label: 'Notion',
-    description: 'Give Dobby access to read and write Notion pages and databases.',
+    description: 'The workspace account Dobby reads and writes Notion pages with.',
     icon: <BookOpen className="h-6 w-6 text-zinc-100" />,
+  },
+  {
+    key: 'instagram',
+    label: 'Instagram',
+    description:
+      "The group's Business/Creator account Dobby posts and stories to. Every post is confirmed in Discord first.",
+    icon: <Instagram className="h-6 w-6 text-pink-400" />,
+  },
+  {
+    key: 'linkedin',
+    label: 'LinkedIn',
+    description: "The account Dobby publishes LinkedIn posts from, after a Confirm in Discord.",
+    icon: <Linkedin className="h-6 w-6 text-sky-400" />,
   },
 ]
 
@@ -72,13 +79,11 @@ function NoticeBanner({ notice }: { notice: Notice }) {
 function IntegrationCard({
   provider,
   integration,
-  isAdmin,
   onDisconnect,
   isDisconnecting,
 }: {
   provider: ProviderConfig
   integration: Integration | undefined
-  isAdmin: boolean
   onDisconnect: (key: string) => void
   isDisconnecting: boolean
 }) {
@@ -111,23 +116,19 @@ function IntegrationCard({
                 day: 'numeric',
               })}
             </p>
-            {isAdmin && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => onDisconnect(provider.key)}
-                disabled={isDisconnecting}
-              >
-                {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
-              </Button>
-            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => onDisconnect(provider.key)}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
           </div>
-        ) : isAdmin ? (
+        ) : (
           <Button asChild size="sm" variant="secondary">
             <a href={api.integrations.connectUrl(provider.key)}>Connect</a>
           </Button>
-        ) : (
-          <p className="text-xs text-zinc-500">An admin can connect this.</p>
         )}
       </CardContent>
     </Card>
@@ -152,6 +153,7 @@ export default function IntegrationsPage() {
   const { data: integrations, isLoading, isError } = useQuery({
     queryKey: ['integrations'],
     queryFn: api.integrations.list,
+    enabled: isAdmin,
   })
 
   const disconnectMutation = useMutation({
@@ -178,15 +180,22 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Integrations</h1>
+        <h1 className="text-2xl font-bold text-zinc-100">Dobby&apos;s service accounts</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Services Dobby can use for the whole server. Only admins can connect or disconnect them.
+          Connect the accounts Dobby acts through. One shared connection per service — nobody
+          links a personal account. Admins only.
         </p>
       </div>
 
       {notice && <NoticeBanner notice={notice} />}
 
-      {isLoading ? (
+      {me && !isAdmin ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-zinc-400">
+            Only admins can manage Dobby&apos;s service accounts.
+          </CardContent>
+        </Card>
+      ) : isLoading || !me ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-48" />
@@ -194,9 +203,7 @@ export default function IntegrationsPage() {
         </div>
       ) : isError ? (
         // Not "Disconnected" cards: an admin would reconnect live connections and create duplicates.
-        <NoticeBanner
-          notice={{ kind: 'error', text: "Couldn't load connection status from Composio. Refresh to try again." }}
-        />
+        <NoticeBanner notice={{ kind: 'error', text: "Couldn't load Dobby's service accounts. Refresh to try again." }} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {PROVIDERS.map((provider) => (
@@ -204,7 +211,6 @@ export default function IntegrationsPage() {
               key={provider.key}
               provider={provider}
               integration={integrationMap.get(provider.key)}
-              isAdmin={isAdmin}
               onDisconnect={handleDisconnect}
               isDisconnecting={
                 disconnectMutation.isPending && disconnectMutation.variables === provider.key

@@ -6,9 +6,7 @@ import {
   Home,
   Plug,
   Users,
-  Settings,
   ClipboardList,
-  BookUser,
   LogOut,
   Bot,
 } from 'lucide-react'
@@ -22,15 +20,11 @@ interface NavProps {
   user: User
 }
 
-const studentLinks = [
-  { href: '/dashboard', label: 'Home', icon: Home },
-  { href: '/dashboard/integrations', label: 'Integrations', icon: Plug },
-  { href: '/dashboard/contacts', label: 'Contacts', icon: BookUser },
-]
+const studentLinks = [{ href: '/dashboard', label: 'Home', icon: Home }]
 
 const adminLinks = [
   { href: '/dashboard/admin/users', label: 'Users', icon: Users },
-  { href: '/dashboard/admin/settings', label: 'Guild Settings', icon: Settings },
+  { href: '/dashboard/integrations', label: 'Service accounts', icon: Plug },
   { href: '/dashboard/admin/audit', label: 'Audit Log', icon: ClipboardList },
 ]
 

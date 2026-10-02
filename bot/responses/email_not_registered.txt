@@ -1,0 +1,20 @@
+Dobby does not have you on the roster yet. Ask an admin to add your Discord ID on the dashboard.
+Dobby cannot find you in the user list. An admin can add you on the dashboard.
+You are not registered with Dobby yet. Please ask an admin to add you.
+Dobby looked for you on the roster and came up empty. An admin can fix that on the dashboard.
+Dobby does not know your Discord ID yet. Ask an admin to add it on the dashboard.
+Dobby is sorry, you are not on the user list. An admin can add you.
+Dobby needs an admin to register you first. Ask them to add your Discord ID.
+You are not in Dobby's records yet. An admin can add you on the dashboard.
+Dobby cannot save that until an admin adds you to the roster.
+Dobby has no entry for you. Ask an admin to add your Discord ID on the dashboard.
+Dobby checked the roster twice and you are not there yet. An admin can add you.
+Not registered yet, if you please. Ask an admin to add you on the dashboard.
+Dobby cannot find a user with your Discord ID. An admin can add one.
+Dobby needs you on the roster first. Please ask an admin.
+Dobby does not recognise your Discord ID. An admin can add it on the dashboard.
+You are unknown to Dobby's roster. Ask an admin to add you.
+Dobby cannot help until an admin adds your Discord ID on the dashboard.
+Dobby has no record of you yet. An admin can add you on the dashboard.
+Dobby's user list does not include you. Ask an admin to add your Discord ID.
+Dobby would love to help, but you must be added by an admin first.

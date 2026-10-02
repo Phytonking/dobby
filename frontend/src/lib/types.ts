@@ -3,24 +3,15 @@ export interface User {
   uw_email: string | null
   discord_id: string | null
   display_name: string
+  calendar_email: string | null
   role: 'admin' | 'student'
   created_at: string
 }
 
 export interface Integration {
   provider: string
+  connected_by: string | null
   connected_at: string
-}
-
-export interface GuildSettings {
-  guild_id: string
-  timezone: string
-  model: string
-  allowed_role_ids: string[]
-  admin_role_ids: string[]
-  allowed_channel_ids: string[]
-  mention_channel_ids: string[]
-  context_limit: number
 }
 
 export interface AuditEntry {
@@ -30,13 +21,9 @@ export interface AuditEntry {
   status: string
   duration_ms: number | null
   created_at: string
-  input_summary: string | null
 }
 
-export interface Contact {
-  name_key: string
-  display_name: string
-  email: string
-  added_by: string | null
-  created_at: string
+export interface Paginated<T> {
+  total: number
+  items: T[]
 }

@@ -1,10 +1,9 @@
-"""Tests for bot/memory.py — Postgres-backed memory helpers.
+"""Tests for bot/memory.py — Postgres lookups for people, emails and the audit trail.
 
 Uses a stub session that matches SQLAlchemy's async execute/mappings API.
 """
 
 import asyncio
-import json
 
 
 # ---------------------------------------------------------------------------
@@ -24,197 +23,146 @@ class FakeMappings:
 
 
 class FakeResult:
-    def __init__(self, rows):
+    def __init__(self, rows, rowcount=0):
         self._rows = rows
+        self.rowcount = rowcount
 
     def mappings(self):
         return FakeMappings(self._rows)
 
 
 class FakeSession:
-    def __init__(self, rows=None):
+    def __init__(self, rows=None, rowcount=0):
         self._rows = rows or []
+        self._rowcount = rowcount
         self.executed = []
         self.committed = False
 
     async def execute(self, stmt, params=None):
         self.executed.append((str(stmt), params))
-        return FakeResult(self._rows)
+        return FakeResult(self._rows, self._rowcount)
 
     async def commit(self):
         self.committed = True
 
 
+PEOPLE = [
+    {"display_name": "Maya Chen", "calendar_email": "maya@uw.edu"},
+    {"display_name": "Leonard Park", "calendar_email": "leo@uw.edu"},
+]
+
+
 # ---------------------------------------------------------------------------
-# Tests
+# find_user_by_discord_id / find_user_by_name
 # ---------------------------------------------------------------------------
 
 
-def test_load_history_returns_empty_when_no_rows():
-    from bot.memory import load_history
+def test_find_user_by_discord_id_returns_row_or_none():
+    from bot.memory import find_user_by_discord_id
 
     async def run():
-        session = FakeSession(rows=[])
-        result = await load_history(session, "guild1", "chan1")
-        assert result == []
+        assert await find_user_by_discord_id(FakeSession(rows=[]), "1") is None
+        session = FakeSession(rows=[PEOPLE[0]])
+        assert await find_user_by_discord_id(session, 1) == PEOPLE[0]
+        _, params = session.executed[0]
+        assert params == {"d": "1"}  # IDs are compared as text
 
     asyncio.run(run())
 
 
-def test_load_history_returns_rows_reversed():
-    from bot.memory import load_history
+def test_find_user_by_name_exact_match():
+    from bot.memory import find_user_by_name
 
     async def run():
-        # memory.py returns DESC then reverses → oldest first
-        rows = [
-            {"role": "model", "content": "hi", "tool_name": None, "tool_input": None, "tool_result": None},
-            {"role": "user", "content": "hello", "tool_name": None, "tool_input": None, "tool_result": None},
-        ]
-        session = FakeSession(rows=rows)
-        result = await load_history(session, "guild1", "chan1")
-        assert len(result) == 2
-        # reversed: user first, then model
-        assert result[0]["role"] == "user"
-        assert result[1]["role"] == "model"
+        assert await find_user_by_name(FakeSession(rows=PEOPLE), "  maya   CHEN ") == PEOPLE[0]
 
     asyncio.run(run())
 
 
-def test_append_turn_executes_insert():
-    from bot.memory import append_turn
+def test_find_user_by_name_unambiguous_first_name():
+    from bot.memory import find_user_by_name
 
     async def run():
-        session = FakeSession()
-        await append_turn(session, "guild1", "chan1", role="user", content="test")
-        assert len(session.executed) == 1
+        assert await find_user_by_name(FakeSession(rows=PEOPLE), "Leonard") == PEOPLE[1]
+
+    asyncio.run(run())
+
+
+def test_find_user_by_name_ambiguous_first_name_falls_back_to_fuzzy():
+    from bot.memory import find_user_by_name
+
+    rows = PEOPLE + [{"display_name": "Maya Ortiz", "calendar_email": "mo@uw.edu"}]
+
+    async def run():
+        # Two Mayas: a bare first name is ambiguous, so no guess is made.
+        assert await find_user_by_name(FakeSession(rows=rows), "Maya") is None
+        # A close misspelling of a full name still resolves.
+        assert await find_user_by_name(FakeSession(rows=rows), "Maya Chan") == PEOPLE[0]
+
+    asyncio.run(run())
+
+
+def test_find_user_by_name_none_for_empty_or_unknown():
+    from bot.memory import find_user_by_name
+
+    async def run():
+        assert await find_user_by_name(FakeSession(rows=PEOPLE), "") is None
+        assert await find_user_by_name(FakeSession(rows=PEOPLE), "Zebediah") is None
+        assert await find_user_by_name(FakeSession(rows=[]), "Maya") is None
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# set_calendar_email
+# ---------------------------------------------------------------------------
+
+
+def test_set_calendar_email_reports_rows_changed():
+    from bot.memory import set_calendar_email
+
+    async def run():
+        session = FakeSession(rowcount=1)
+        assert await set_calendar_email(session, 7, "maya@uw.edu") == 1
         stmt, params = session.executed[0]
-        assert "INSERT" in stmt
-        assert params["g"] == "guild1"
-        assert params["c"] == "chan1"
-        assert params["role"] == "user"
-        assert params["content"] == "test"
+        assert "UPDATE users SET calendar_email" in stmt
+        assert params == {"e": "maya@uw.edu", "d": "7"}
+        assert await set_calendar_email(FakeSession(rowcount=0), 7, None) == 0
 
     asyncio.run(run())
 
 
-def test_append_turn_serializes_tool_fields():
-    from bot.memory import append_turn
+# ---------------------------------------------------------------------------
+# record_action
+# ---------------------------------------------------------------------------
+
+
+def test_record_action_inserts_audit_row():
+    from bot.memory import record_action
 
     async def run():
         session = FakeSession()
-        await append_turn(
+        await record_action(
             session,
-            "guild1",
-            "chan1",
-            role="tool",
-            tool_name="SOME_TOOL",
-            tool_input={"x": 1},
-            tool_result={"success": True},
+            discord_id="1",
+            guild_id="10",
+            channel_id="40",
+            tool="GOOGLECALENDAR_CREATE_EVENT",
+            status="ok",
+            duration_ms=123,
         )
-        _, params = session.executed[0]
-        assert params["role"] == "tool"
-        assert params["tool_name"] == "SOME_TOOL"
-        # tool_input/result are JSON strings (for ::jsonb cast)
-        assert json.loads(params["tool_input"]) == {"x": 1}
-        assert json.loads(params["tool_result"]) == {"success": True}
-
-    asyncio.run(run())
-
-
-def test_save_contact_executes_upsert():
-    from bot.memory import save_contact
-
-    async def run():
-        session = FakeSession()
-        await save_contact(session, "guild1", "Maya Chen", "maya@uw.edu", added_by="99")
-        assert len(session.executed) == 1
         stmt, params = session.executed[0]
-        assert "INSERT" in stmt
-        assert params["nk"] == "maya chen"
-        assert params["dn"] == "Maya Chen"
-        assert params["email"] == "maya@uw.edu"
-        assert params["g"] == "guild1"
-
-    asyncio.run(run())
-
-
-def test_save_contact_normalizes_name():
-    from bot.memory import save_contact
-
-    async def run():
-        session = FakeSession()
-        await save_contact(session, "guild1", "  MAYA   CHEN  ", "maya@uw.edu")
-        _, params = session.executed[0]
-        assert params["nk"] == "maya chen"
-        assert params["dn"] == "MAYA CHEN"  # save_contact strips whitespace but preserves caller's casing
-
-    asyncio.run(run())
-
-
-def test_lookup_contact_returns_none_for_empty_db():
-    from bot.memory import lookup_contact
-
-    async def run():
-        session = FakeSession(rows=[])
-        result = await lookup_contact(session, "guild1", "Maya")
-        assert result is None
-
-    asyncio.run(run())
-
-
-def test_lookup_contact_exact_match():
-    from bot.memory import lookup_contact
-
-    async def run():
-        rows = [{"name_key": "maya chen", "display_name": "Maya Chen", "email": "maya@uw.edu"}]
-        session = FakeSession(rows=rows)
-        result = await lookup_contact(session, "guild1", "maya chen")
-        assert result == "maya@uw.edu"
-
-    asyncio.run(run())
-
-
-def test_lookup_contact_fuzzy_first_name():
-    from bot.memory import lookup_contact
-
-    async def run():
-        rows = [{"name_key": "maya chen", "display_name": "Maya Chen", "email": "maya@uw.edu"}]
-        session = FakeSession(rows=rows)
-        # "maya" has good overlap with "maya chen"
-        result = await lookup_contact(session, "guild1", "Maya")
-        assert result == "maya@uw.edu"
-
-    asyncio.run(run())
-
-
-def test_load_guild_settings_returns_none_when_absent():
-    from bot.memory import load_guild_settings
-
-    async def run():
-        session = FakeSession(rows=[])
-        result = await load_guild_settings(session, "guild1")
-        assert result is None
-
-    asyncio.run(run())
-
-
-def test_load_guild_settings_returns_dict_when_present():
-    from bot.memory import load_guild_settings
-
-    async def run():
-        row = {
-            "guild_id": "guild1",
-            "timezone": "America/Los_Angeles",
-            "model": "gemini-test",
-            "context_limit": 12,
-            "allowed_role_ids": [],
-            "admin_role_ids": [],
-            "allowed_channel_ids": [],
-            "mention_channel_ids": [],
+        assert "INSERT INTO agent_actions" in stmt
+        assert "SELECT id FROM users WHERE discord_id" in stmt
+        assert params == {
+            "d": "1",
+            "g": "10",
+            "c": "40",
+            "tool": "GOOGLECALENDAR_CREATE_EVENT",
+            "status": "ok",
+            "ms": 123,
         }
-        session = FakeSession(rows=[row])
-        result = await load_guild_settings(session, "guild1")
-        assert result is not None
-        assert result["timezone"] == "America/Los_Angeles"
+        # Metadata only: no tool arguments or results reach the database.
+        assert "input" not in stmt and "output" not in stmt
 
     asyncio.run(run())

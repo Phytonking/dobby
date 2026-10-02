@@ -3,3 +3,5 @@
 # dashboard/tests and tests/integration.
 -r requirements.txt
 -r dashboard/requirements.txt
+# dashboard/tests use an in-memory SQLite database.
+aiosqlite>=0.20.0

@@ -1,5 +1,7 @@
 # Implementation research
 
+> Historical integration research, not the current dashboard login guide. Dashboard login now supports OAuth (verified Google accounts from any domain or Discord), LAN username/password accounts, or both via `AUTH_MODE`. This does not replace Composio service authorization. See [current setup](../README.md#step-5-dashboard-login) and [dashboard architecture](DASHBOARD_ARCHITECTURE.md).
+
 Official sources reviewed for this implementation on September 9, 2026. API availability and pricing can change.
 
 | Decision | Evidence |

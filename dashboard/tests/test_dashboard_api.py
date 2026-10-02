@@ -1,8 +1,5 @@
 """Endpoint tests against the FastAPI app with the DB dependency overridden."""
 
-import bcrypt
-
-from dashboard import auth as auth_mod
 from dashboard.auth import COOKIE_NAME, get_current_user, make_token
 
 from .conftest import FakeDB, make_db_session, make_user
@@ -83,46 +80,3 @@ def test_admin_route_allowed_for_admin(app, client):
     r = c.get("/admin/users")
     assert r.status_code == 200
     assert r.json()["total"] == 1
-
-
-# ---------------------------------------------------------------------------
-# Local login
-# ---------------------------------------------------------------------------
-
-
-def _hash(pw: str) -> str:
-    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt(rounds=4)).decode()
-
-
-def test_local_login_unknown_user_is_401(client):
-    c = client(FakeDB(results=[None]))
-    r = c.post("/auth/local", json={"username": "ghost", "password": "pw"})
-    assert r.status_code == 401
-
-
-def test_local_login_wrong_password_is_401(client):
-    user = make_user(password_hash=_hash("right"))
-    c = client(FakeDB(results=[user]))
-    r = c.post("/auth/local", json={"username": "student@uw.edu", "password": "wrong"})
-    assert r.status_code == 401
-
-
-def test_local_login_success_sets_session_cookie(client):
-    user = make_user(password_hash=_hash("right"))
-    db = FakeDB(results=[user])
-    c = client(db)
-    r = c.post("/auth/local", json={"username": "student@uw.edu", "password": "right"})
-    assert r.status_code == 200
-    assert r.json()["ok"] is True
-    assert COOKIE_NAME in r.cookies
-    # create_session persisted a session row
-    assert db.committed
-    assert len(db.added) == 1
-    assert auth_mod.verify_token(db.added[0].token) == str(user.id)
-
-
-def test_local_login_user_without_password_hash_is_401(client):
-    user = make_user(password_hash=None)
-    c = client(FakeDB(results=[user]))
-    r = c.post("/auth/local", json={"username": "student@uw.edu", "password": "pw"})
-    assert r.status_code == 401
