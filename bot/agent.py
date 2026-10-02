@@ -1,18 +1,17 @@
+import json
 import logging
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from google import genai
-from google.genai import errors, types
+from openai import APIError, OpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .memory import load_history, append_turn
-from .tools import create_composio_session, get_gemini_tools, execute_tool
+from .tools import create_composio_session, get_openai_tools, execute_tool
 
 log = logging.getLogger("agent")
 
-MAX_TOOL_CALLS = 8
 SYSTEM_PROMPT = (
     "You are Dobby, a helpful assistant for a UW student group Discord server. "
     "You have access to tools for Google Calendar, GitHub, and Notion. "
@@ -25,13 +24,14 @@ SYSTEM_PROMPT = (
 class Agent:
     def __init__(self, config):
         self.config = config
-        self.client = genai.Client(
-            api_key=config.gemini_key,
-            http_options=types.HttpOptions(timeout=60000),
+        self.client = OpenAI(
+            base_url=config.modal_base_url,
+            api_key=config.modal_token,
+            timeout=60,
         )
         self._composio_client = None
         self._session = None
-        self._gemini_tools = None
+        self._tools = None
 
     def _ensure_tools(self):
         if self._session is None:
@@ -39,7 +39,7 @@ class Agent:
                 self.config.composio_key,
                 self.config.composio_entity_id,
             )
-            self._gemini_tools = get_gemini_tools(self._session)
+            self._tools = get_openai_tools(self._session)
 
     async def run(
         self,
@@ -61,8 +61,8 @@ class Agent:
             return "Tool connections are not configured yet. Ask an admin to check the Composio API key."
 
         history = await load_history(session, guild_id, channel_id)
-        contents = _history_to_contents(history)
-        contents.append(types.Content(role="user", parts=[types.Part(text=request)]))
+        messages = _history_to_messages(history)
+        messages.append({"role": "user", "content": request})
 
         await append_turn(session, guild_id, channel_id, role="user", content=request)
         await session.commit()
@@ -71,32 +71,41 @@ class Agent:
         tool_calls_made = 0
         start = time.monotonic()
 
-        while tool_calls_made < MAX_TOOL_CALLS:
-            try:
-                response = self.client.models.generate_content(
-                    model=self.config.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        tools=self._gemini_tools,
-                        temperature=0,
-                        max_output_tokens=4096,
-                    ),
-                )
-            except errors.APIError as exc:
-                log.error("gemini_error code=%s", exc.code)
-                return "Gemini is temporarily unavailable. Please try again shortly."
+        while tool_calls_made < self.config.max_tool_calls:
+            kwargs = {}
+            if self.config.reasoning_effort:
+                kwargs["reasoning_effort"] = self.config.reasoning_effort
+            if self._tools:
+                kwargs["tools"] = self._tools
 
-            candidate = response.candidates[0] if response.candidates else None
-            if not candidate:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=[{"role": "system", "content": system}] + messages,
+                    temperature=0,
+                    max_tokens=self.config.max_completion_tokens,
+                    **kwargs,
+                )
+            except APIError as exc:
+                log.error("modal_error status=%s", getattr(exc, "status_code", None))
+                return "The model endpoint is temporarily unavailable. Please try again shortly."
+
+            choice = response.choices[0] if response.choices else None
+            if not choice:
                 return "I couldn't generate a response. Please try again."
 
-            fn_calls = [p.function_call for p in candidate.content.parts if p.function_call]
+            message = choice.message
+            if getattr(choice, "finish_reason", None) == "length":
+                # A reasoning model spends part of max_tokens on hidden
+                # reasoning_content before it ever writes the reply — a
+                # truncated response here is a cut-off answer, not a clean
+                # stop. Silently returning it as if it finished is exactly
+                # the kind of "one call and done" incoherence to catch.
+                log.warning("response_truncated_at_max_tokens tool_calls_made=%d", tool_calls_made)
+            tool_calls = message.tool_calls or []
 
-            if not fn_calls:
-                text = "".join(
-                    p.text for p in candidate.content.parts if hasattr(p, "text") and p.text
-                )
+            if not tool_calls:
+                text = message.content or ""
                 log.info(
                     "agent_done tool_calls=%d duration_ms=%d",
                     tool_calls_made,
@@ -106,54 +115,90 @@ class Agent:
                 await session.commit()
                 return text or "Done."
 
-            contents.append(candidate.content)
-            fn_results = []
-            for fc in fn_calls:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in tool_calls
+                    ],
+                }
+            )
+            for tc in tool_calls:
+                if tool_calls_made >= self.config.max_tool_calls:
+                    # A single response can carry many parallel tool_calls —
+                    # cap mid-batch too, or a model that requests a dozen
+                    # actions at once bypasses the limit entirely.
+                    log.warning("tool_call_cap_hit_mid_batch discarded=%d", len(tool_calls) - tool_calls_made)
+                    break
                 tool_calls_made += 1
-                params = dict(fc.args) if fc.args else {}
-                log.info("tool_call tool=%s", fc.name)
-                result = execute_tool(self._session, fc.name, params)
+                try:
+                    params = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                except ValueError:
+                    log.warning("tool_args_unparseable tool=%s", tc.function.name)
+                    params = {}
+                log.info("tool_call tool=%s", tc.function.name)
+                result = execute_tool(self._session, tc.function.name, params)
                 await append_turn(
                     session,
                     guild_id,
                     channel_id,
                     role="tool",
-                    tool_name=fc.name,
+                    tool_name=tc.function.name,
                     tool_input=params,
                     tool_result=result,
                 )
-                fn_results.append(
-                    types.Part.from_function_response(name=fc.name, response=result)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(result),
+                    }
                 )
-            contents.append(types.Content(role="tool", parts=fn_results))
             await session.commit()
 
         return "I ran into the tool call limit. Please break your request into smaller steps."
 
 
-def _history_to_contents(rows: list[dict]) -> list[types.Content]:
-    contents = []
-    for row in rows:
+def _history_to_messages(rows: list[dict]) -> list[dict]:
+    messages = []
+    for i, row in enumerate(rows):
         role = row["role"]
         if role == "user":
-            contents.append(
-                types.Content(role="user", parts=[types.Part(text=row["content"] or "")])
-            )
+            messages.append({"role": "user", "content": row["content"] or ""})
         elif role == "model":
-            contents.append(
-                types.Content(role="model", parts=[types.Part(text=row["content"] or "")])
-            )
+            messages.append({"role": "assistant", "content": row["content"] or ""})
         elif role == "tool":
-            fn_call_part = types.Part(
-                function_call=types.FunctionCall(
-                    name=row["tool_name"],
-                    args=row.get("tool_input") or {},
-                )
+            # Synthetic id: only needs to match within this one reconstructed
+            # message list (assistant tool_calls[].id <-> tool.tool_call_id),
+            # never anything from the original live request.
+            call_id = f"call_{i}"
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": row["tool_name"],
+                                "arguments": json.dumps(row.get("tool_input") or {}),
+                            },
+                        }
+                    ],
+                }
             )
-            fn_resp_part = types.Part.from_function_response(
-                name=row["tool_name"],
-                response=row.get("tool_result") or {},
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": json.dumps(row.get("tool_result") or {}),
+                }
             )
-            contents.append(types.Content(role="model", parts=[fn_call_part]))
-            contents.append(types.Content(role="tool", parts=[fn_resp_part]))
-    return contents
+    return messages

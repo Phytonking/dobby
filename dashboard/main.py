@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .auth import get_current_user
+from .config import DASHBOARD_URL
 from .database import engine
 from .routers import auth, admin, integrations, local_auth
 from .schemas import UserOut
@@ -32,9 +33,8 @@ app.add_middleware(
     https_only=os.environ.get("ENV", "development") == "production",
 )
 
-_dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 _allowed_origins = list({
-    _dashboard_url,
+    DASHBOARD_URL,
     "http://localhost:3000",
     "http://localhost:8000",
     "http://127.0.0.1:3000",

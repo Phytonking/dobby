@@ -9,7 +9,7 @@ ARROW = " → "
 def parse(value, zone):
     try:
         when = datetime.fromisoformat(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     return when.astimezone(ZoneInfo(zone)) if when.tzinfo is not None else when
 

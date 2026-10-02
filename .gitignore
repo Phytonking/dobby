@@ -16,3 +16,4 @@ gha-creds-*.json
 .ruff_cache/
 .docker-test/
 frontend/node_modules/
+/evals/

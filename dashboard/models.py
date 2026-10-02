@@ -5,9 +5,11 @@ import uuid
 from sqlalchemy import (
     BigInteger,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     ARRAY,
     text,
 )
@@ -19,6 +21,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .database import Base
 
+# Nullability, defaults, and constraints here must mirror migrations/versions/.
+# tests/integration/test_pg_schema.py diffs this metadata against the migrated
+# schema and fails on drift.
+
 
 class User(Base):
     __tablename__ = "users"
@@ -28,13 +34,13 @@ class User(Base):
     )
     uw_email: Mapped[Optional[str]] = mapped_column(Text, unique=True, nullable=True)
     discord_id: Mapped[Optional[str]] = mapped_column(Text, unique=True, nullable=True)
-    display_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(Text, nullable=False, default="student")
     added_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
-    created_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMPTZ, server_default=text("now()")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMPTZ, nullable=False, server_default=text("now()")
     )
     password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -56,10 +62,10 @@ class Session(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    provider: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMPTZ, server_default=text("now()")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMPTZ, nullable=False, server_default=text("now()")
     )
 
     user: Mapped["User"] = relationship("User", back_populates="sessions")
@@ -67,6 +73,9 @@ class Session(Base):
 
 class Integration(Base):
     __tablename__ = "integrations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_integrations_user_provider"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -75,9 +84,9 @@ class Integration(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     provider: Mapped[str] = mapped_column(Text, nullable=False)
-    composio_entity_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    connected_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMPTZ, server_default=text("now()")
+    composio_entity_id: Mapped[str] = mapped_column(Text, nullable=False)
+    connected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMPTZ, nullable=False, server_default=text("now()")
     )
 
     user: Mapped["User"] = relationship("User", back_populates="integrations")
@@ -87,32 +96,39 @@ class GuildSettings(Base):
     __tablename__ = "guild_settings"
 
     guild_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    timezone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    allowed_role_ids: Mapped[Optional[list[str]]] = mapped_column(
-        ARRAY(Text), nullable=True
+    timezone: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="America/Los_Angeles"
     )
-    admin_role_ids: Mapped[Optional[list[str]]] = mapped_column(
-        ARRAY(Text), nullable=True
+    model: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="gemini-2.5-flash-lite"
     )
-    allowed_channel_ids: Mapped[Optional[list[str]]] = mapped_column(
-        ARRAY(Text), nullable=True
+    allowed_role_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'")
     )
-    mention_channel_ids: Mapped[Optional[list[str]]] = mapped_column(
-        ARRAY(Text), nullable=True
+    admin_role_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'")
     )
-    context_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMPTZ, server_default=text("now()")
+    allowed_channel_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'")
+    )
+    mention_channel_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'")
+    )
+    context_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("12")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMPTZ, nullable=False, server_default=text("now()")
     )
 
 
 class AgentAction(Base):
     __tablename__ = "agent_actions"
+    __table_args__ = (Index("ix_agent_actions_created", "created_at"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     discord_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     guild_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -120,24 +136,27 @@ class AgentAction(Base):
     tool: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     input: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     output: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
     duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMPTZ, server_default=text("now()")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMPTZ, nullable=False, server_default=text("now()")
     )
 
 
 class Contact(Base):
     __tablename__ = "contacts"
+    __table_args__ = (
+        UniqueConstraint("guild_id", "name_key", name="uq_contacts_guild_name"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    guild_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    name_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    display_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    guild_id: Mapped[str] = mapped_column(Text, nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str] = mapped_column(Text, nullable=False)
     added_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMPTZ, server_default=text("now()")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMPTZ, nullable=False, server_default=text("now()")
     )

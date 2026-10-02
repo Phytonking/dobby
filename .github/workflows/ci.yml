@@ -8,21 +8,61 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # Scratch postgres for tests/integration (mirrors compose.test.yaml postgres-test).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dobby
+          POSTGRES_PASSWORD: dobby
+          POSTGRES_DB: dobby_test
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U dobby -d dobby_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements-dev.txt
       - run: python scripts/check_secrets.py
-      - run: ruff check bot scripts tests
-      - run: ruff format --check bot scripts tests
+      - run: ruff check bot scripts tests dashboard/tests
+      - run: ruff format --check bot scripts tests dashboard/tests
+      # Offline unit suites (bot + dashboard), then the postgres-backed suite.
       - run: python -m pytest -q
+      - run: python -m pytest dashboard/tests -q
+      - run: python -m pytest tests/integration -q
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://dobby:dobby@127.0.0.1:5433/dobby_test
+      # .env.example intentionally leaves required secrets empty; compose `:?`
+      # rejects empty, so config validation injects placeholders via the env.
       - run: docker compose --env-file .env.example config --quiet
+        env:
+          DISCORD_TOKEN: ci-placeholder
+          DISCORD_GUILD_ID: "0"
+          MODAL_BASE_URL: https://ci-placeholder.modal.direct/v1
+          MODAL_PROXY_TOKEN_ID: ci-placeholder
+          MODAL_PROXY_TOKEN_SECRET: ci-placeholder
+          MODAL_MODEL: ci-placeholder
+          COMPOSIO_API_KEY: ci-placeholder
+          SECRET_KEY: ci-placeholder
       - run: docker compose --env-file .env.example -f compose.auth.yaml config --quiet
+        env:
+          DISCORD_TOKEN: ci-placeholder
+          DISCORD_GUILD_ID: "0"
+          MODAL_BASE_URL: https://ci-placeholder.modal.direct/v1
+          MODAL_PROXY_TOKEN_ID: ci-placeholder
+          MODAL_PROXY_TOKEN_SECRET: ci-placeholder
+          MODAL_MODEL: ci-placeholder
+          COMPOSIO_API_KEY: ci-placeholder
+          SECRET_KEY: ci-placeholder
       - run: docker compose -f compose.test.yaml config --quiet
       - run: docker build -t calendar-bot:test .
-      - run: docker run --rm --entrypoint python calendar-bot:test -c "import bot.main; import google.genai"
-      # The same suite the developer runs locally, in the image it ships in.
+      - run: docker run --rm --entrypoint python calendar-bot:test -c "import bot.main; import openai"
+      # The same suite the developer runs locally, in the image it ships in (python 3.12).
       - run: docker compose -f compose.test.yaml run --rm tests
       - run: docker compose -f compose.test.yaml run --rm lint

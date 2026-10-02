@@ -28,10 +28,13 @@ async def append_turn(
     tool_input: dict | None = None,
     tool_result: dict | None = None,
 ) -> None:
+    # CAST(... AS jsonb) instead of ::jsonb — SQLAlchemy text() does not parse
+    # ":param::type" as a bind param and ships the literal ":tool_input::jsonb"
+    # to Postgres, which is a syntax error on every insert.
     await session.execute(
         sa.text(
             "INSERT INTO conversation_history (guild_id, channel_id, role, content, tool_name, tool_input, tool_result) "
-            "VALUES (:g, :c, :role, :content, :tool_name, :tool_input::jsonb, :tool_result::jsonb)"
+            "VALUES (:g, :c, :role, :content, :tool_name, CAST(:tool_input AS jsonb), CAST(:tool_result AS jsonb))"
         ),
         {
             "g": guild_id,
@@ -86,9 +89,7 @@ async def save_contact(
 
 async def list_contacts(session: AsyncSession, guild_id: str) -> list[dict]:
     result = await session.execute(
-        sa.text(
-            "SELECT display_name, email FROM contacts WHERE guild_id = :g ORDER BY display_name"
-        ),
+        sa.text("SELECT display_name, email FROM contacts WHERE guild_id = :g ORDER BY display_name"),
         {"g": guild_id},
     )
     return [dict(r) for r in result.mappings().all()]

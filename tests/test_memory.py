@@ -11,6 +11,7 @@ import json
 # Session/result stubs matching SQLAlchemy async execute() API
 # ---------------------------------------------------------------------------
 
+
 class FakeMappings:
     def __init__(self, rows):
         self._rows = rows  # list of dicts
@@ -47,6 +48,7 @@ class FakeSession:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_load_history_returns_empty_when_no_rows():
     from bot.memory import load_history

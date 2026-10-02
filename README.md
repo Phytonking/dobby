@@ -40,7 +40,7 @@ Six steps, in order. Steps 1–4 gather credentials, step 5 verifies them, step 
 | --- | --- | --- |
 | 1 | Install Docker, create `.env`, `secrets/` and `data/` | No |
 | 2 | Create the Discord bot, fill in IDs | Yes |
-| 3 | Get a Gemini API key | Yes |
+| 3 | Configure the Modal-hosted model endpoint | Yes |
 | 4 | Link the Google account | Yes |
 | 5 | Check the configuration | No |
 | 6 | Start Dobby | No |
@@ -105,13 +105,16 @@ TEAM_TIMEZONE=America/Denver
 
 Replace placeholders with numeric IDs. Lists accept comma-separated IDs. `ALLOWED_USER_IDS` optionally grants access to specific users instead of requiring a role. At least one user or role must be allowed; there is no administrator bypass.
 
-Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Threads and forum posts use their own IDs in these allowlists, not the parent channel ID. Private thread access is rechecked before confirmation. Tell members that mention requests send recent channel text, author display names and the channel or thread name to Gemini.
+Leave `MENTION_CHANNEL_IDS` **empty to let Dobby answer mentions in any channel it can see** in that server; list IDs to restrict mentions to those channels. Either way, mentions must also satisfy `ALLOWED_CHANNEL_IDS` when it is set, and the user/role allowlist always applies. Threads and forum posts use their own IDs in these allowlists, not the parent channel ID. Private thread access is rechecked before confirmation. Tell members that mention requests send recent channel text, author display names and the channel or thread name to the configured model endpoint.
 
-### Step 3: Get a Gemini API key
+### Step 3: Configure the Modal-hosted model endpoint
 
-Create a key in [Google AI Studio](https://aistudio.google.com/apikey), then set `GEMINI_API_KEY` in `.env`. The default model is `gemini-2.5-flash-lite`; another structured-output model can be selected with `GEMINI_MODEL`.
+Dobby talks to an OpenAI-compatible `/v1/chat/completions` endpoint hosted on Modal. Set in `.env`:
 
-Use a Gemini free-tier project if you want requests limited by its free quota rather than billed. Models and quotas can change. Free-tier content may improve Google's products, so avoid confidential meeting content on that tier. [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing).
+- `MODAL_BASE_URL` — the endpoint URL from the Modal dashboard. Either the full `.../v1/chat/completions` URL or just the `.../v1` prefix works; the trailing `/chat/completions` is stripped automatically.
+- `MODAL_PROXY_TOKEN_ID` / `MODAL_PROXY_TOKEN_SECRET` — sent as `Authorization: Bearer <ID>.<SECRET>`, matching Modal's proxy auth token format.
+- `MODAL_MODEL` — the model string the endpoint serves (e.g. `Qwen/Qwen3.8-2.4T-A95B`).
+- `MODAL_REASONING_EFFORT` — optional, passed through as-is when set. Higher effort raises latency; a Discord reply is waiting on it synchronously, so tune for your endpoint rather than assuming a demo value is right for production.
 
 ### Step 4: Link the Google account using Docker
 
@@ -146,7 +149,7 @@ docker compose run --rm --no-deps dobby python -m bot.main --check
 **Success** prints one line and exits `0`:
 
 ```text
-2026-05-01 12:00:00,000 scheduler config_ok guild=123456789 timezone=America/Denver model=gemini-2.5-flash-lite mention_channels=1
+2026-05-01 12:00:00,000 scheduler config_ok guild=123456789 timezone=America/Denver model=Qwen/Qwen3.8-2.4T-A95B mention_channels=1
 ```
 
 **Any problem** exits `2` and names exactly what to fix:
@@ -275,7 +278,7 @@ Pi restarts Dobby when Docker starts after boot unless explicitly stopped. Windo
 
 Everything below runs in containers; no host Python is required.
 
-**Test suite and linting.** These need no Discord, Gemini or Google credentials and run with networking disabled:
+**Test suite and linting.** These need no Discord, Modal or Composio credentials and run with networking disabled:
 
 ```text
 docker compose -f compose.test.yaml run --rm tests
@@ -336,21 +339,33 @@ The optional Pi timer checks every five minutes and recreates the container when
 | Reactions do nothing | Only the requester within two minutes; bot needs Add Reactions; look for `mention_access_denied` in the logs |
 | Contacts not remembered, or Dobby goes quiet after you send an email | `data/` must exist and be writable by `DOBBY_UID` (a root-owned folder Docker created is the usual cause). `mkdir -p data`, `chown` it to the `DOBBY_UID:DOBBY_GID` from `.env`, recreate the container. Step 5's `--check` fails on this; the running bot only logs `data_dir_not_writable` and keeps working without memory |
 | Google auth expires | Relink Testing-mode OAuth and recreate container |
-| Gemini fails | Check key, model and quota; there is no paid fallback |
+| Modal endpoint fails | Check `MODAL_BASE_URL`, token and model; there is no paid fallback |
 | Old preview fails | Restart/update, expiry, permission change or stale event; request another preview |
 | Registry pull denied | Make package public and check lowercase `DOBBY_IMAGE` |
 
 ## Development
 
-Prefer [Test it in Docker](#test-it-in-docker) to run the suite in the image it ships in. Optional host development still works with Python 3.14:
+The test environment has three layers; `make help` lists everything.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m pytest -q
-.\.venv\Scripts\ruff check bot scripts tests
-.\.venv\Scripts\ruff format --check bot scripts tests
-.\.venv\Scripts\python -m bot.main
+```bash
+make venv               # .venv with bot + dashboard + test deps (requirements-dev.txt)
+make test               # offline unit suites: bot (tests/) + dashboard (dashboard/tests/)
+make test-integration   # postgres-backed suite (tests/integration/) on a throwaway docker postgres
+make test-docker        # the unit suite inside the shipped python 3.12 image, sandboxed
+make chat-fake          # REPL: talk to the agent pipeline, scripted endpoint — no keys
+make chat               # REPL with real Modal/Composio keys from .env (no Discord needed)
+make lint / make fmt    # ruff check / format over bot, scripts, tests, dashboard/tests
+make check              # lint + everything above except test-docker (what CI runs)
 ```
 
-On Pi/Linux use `.venv/bin/python`. Stop Docker Dobby before launching a host copy with the same token. Dependencies are pinned in `requirements.txt`; direct ranges are in `requirements.in`. Tests mock external APIs; live testing requires your credentials. Dobby's phrasings live in `bot/responses/*.txt` (20 lines per file); edit them freely, the suite checks every file still has 20 usable lines.
+- **Unit suites** mock all external calls (the Modal endpoint, Composio, DB) and run anywhere in ~1s.
+- **Integration suite** (`tests/integration/`) runs alembic migrations and exercises the raw SQL,
+  JSONB/ARRAY/UUID round-trips, and constraints against real Postgres. It skips itself unless
+  `TEST_DATABASE_URL` is set; `make test-integration` handles the database lifecycle for you.
+  It also diffs `dashboard/models.py` against the migrated schema, so model/migration drift fails CI.
+- **Docker suite** (`compose.test.yaml`) runs the unit suite in the image that ships (python 3.12,
+  read-only, no network). The shipped image is 3.12 while dev/CI hosts run 3.14 — ruff's
+  `target-version` in `pyproject.toml` stays `py312` so nothing 3.14-only lands in the image.
+
+Stop Docker Dobby before launching a host copy with the same token. Bot dependencies are pinned in
+`requirements.txt` (ranges in `requirements.in`); dashboard deps live in `dashboard/requirements.txt`.

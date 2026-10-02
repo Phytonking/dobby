@@ -16,13 +16,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements-dev.txt
       - run: python scripts/check_secrets.py
-      - run: ruff check bot scripts tests
-      - run: ruff format --check bot scripts tests
+      - run: ruff check bot scripts tests dashboard/tests
+      - run: ruff format --check bot scripts tests dashboard/tests
       - run: python -m pytest -q
+      - run: python -m pytest dashboard/tests -q
       - run: docker compose --env-file .env.example config --quiet
+        env:
+          DISCORD_TOKEN: ci-placeholder
+          DISCORD_GUILD_ID: "0"
+          MODAL_BASE_URL: https://ci-placeholder.modal.direct/v1
+          MODAL_PROXY_TOKEN_ID: ci-placeholder
+          MODAL_PROXY_TOKEN_SECRET: ci-placeholder
+          MODAL_MODEL: ci-placeholder
+          COMPOSIO_API_KEY: ci-placeholder
+          SECRET_KEY: ci-placeholder
       - run: docker compose --env-file .env.example -f compose.auth.yaml config --quiet
+        env:
+          DISCORD_TOKEN: ci-placeholder
+          DISCORD_GUILD_ID: "0"
+          MODAL_BASE_URL: https://ci-placeholder.modal.direct/v1
+          MODAL_PROXY_TOKEN_ID: ci-placeholder
+          MODAL_PROXY_TOKEN_SECRET: ci-placeholder
+          MODAL_MODEL: ci-placeholder
+          COMPOSIO_API_KEY: ci-placeholder
+          SECRET_KEY: ci-placeholder
   publish:
     if: github.ref == 'refs/heads/main'
     needs: verify

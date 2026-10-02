@@ -17,6 +17,7 @@ from ..auth import (
     get_current_user,
     set_session_cookie,
 )
+from ..config import DASHBOARD_URL
 from ..database import get_db
 from ..models import User
 
@@ -51,8 +52,6 @@ if DISCORD_OAUTH_ENABLED:
         access_token_url="https://discord.com/api/oauth2/token",
         client_kwargs={"scope": "identify email"},
     )
-
-DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 
 
 # ---------------------------------------------------------------------------

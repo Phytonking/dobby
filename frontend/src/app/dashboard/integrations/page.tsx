@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Github, BookOpen } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -16,11 +17,16 @@ interface ProviderConfig {
   icon: React.ReactNode
 }
 
+interface Notice {
+  kind: 'success' | 'error'
+  text: string
+}
+
 const PROVIDERS: ProviderConfig[] = [
   {
     key: 'googlecalendar',
     label: 'Google Calendar',
-    description: 'Let Dobby access your calendar to schedule events and check availability.',
+    description: 'Let Dobby schedule events and check availability on the team calendar.',
     icon: <Calendar className="h-6 w-6 text-blue-400" />,
   },
   {
@@ -37,14 +43,42 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ]
 
+const LABELS = new Map(PROVIDERS.map((p) => [p.key, p.label]))
+
+// Only known provider keys render, so a crafted ?error= link can't inject text.
+function readCallbackNotice(): Notice | null {
+  const params = new URLSearchParams(window.location.search)
+  const connected = LABELS.get(params.get('connected') ?? '')
+  const failed = LABELS.get(params.get('error') ?? '')
+  if (connected) return { kind: 'success', text: `${connected} connected.` }
+  if (failed) {
+    return { kind: 'error', text: `${failed} didn't connect. The sign-in was cancelled or failed — try again.` }
+  }
+  return null
+}
+
+function NoticeBanner({ notice }: { notice: Notice }) {
+  const tone =
+    notice.kind === 'success'
+      ? 'border-emerald-800 bg-emerald-950 text-emerald-300'
+      : 'border-red-800 bg-red-950 text-red-300'
+  return (
+    <div role="status" className={`rounded-md border px-4 py-3 text-sm ${tone}`}>
+      {notice.text}
+    </div>
+  )
+}
+
 function IntegrationCard({
   provider,
   integration,
+  isAdmin,
   onDisconnect,
   isDisconnecting,
 }: {
   provider: ProviderConfig
   integration: Integration | undefined
+  isAdmin: boolean
   onDisconnect: (key: string) => void
   isDisconnecting: boolean
 }) {
@@ -77,19 +111,23 @@ function IntegrationCard({
                 day: 'numeric',
               })}
             </p>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => onDisconnect(provider.key)}
-              disabled={isDisconnecting}
-            >
-              {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
-            </Button>
+            {isAdmin && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => onDisconnect(provider.key)}
+                disabled={isDisconnecting}
+              >
+                {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </Button>
+            )}
           </div>
-        ) : (
+        ) : isAdmin ? (
           <Button asChild size="sm" variant="secondary">
             <a href={api.integrations.connectUrl(provider.key)}>Connect</a>
           </Button>
+        ) : (
+          <p className="text-xs text-zinc-500">An admin can connect this.</p>
         )}
       </CardContent>
     </Card>
@@ -98,16 +136,40 @@ function IntegrationCard({
 
 export default function IntegrationsPage() {
   const queryClient = useQueryClient()
+  const [notice, setNotice] = useState<Notice | null>(null)
 
-  const { data: integrations, isLoading } = useQuery({
+  useEffect(() => {
+    const fromCallback = readCallbackNotice()
+    if (fromCallback) {
+      setNotice(fromCallback)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
+
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const isAdmin = me?.role === 'admin'
+
+  const { data: integrations, isLoading, isError } = useQuery({
     queryKey: ['integrations'],
     queryFn: api.integrations.list,
   })
 
   const disconnectMutation = useMutation({
     mutationFn: (provider: string) => api.integrations.disconnect(provider),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['integrations'] }),
+    onSuccess: (_, provider) =>
+      setNotice({ kind: 'success', text: `${LABELS.get(provider)} disconnected. Dobby no longer has access.` }),
+    onError: (err, provider) =>
+      setNotice({ kind: 'error', text: `Couldn't disconnect ${LABELS.get(provider)}: ${err.message}` }),
+    // Refetch either way: a partial failure can still have removed some connections.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['integrations'] }),
   })
+
+  function handleDisconnect(key: string) {
+    const label = LABELS.get(key)
+    if (window.confirm(`Disconnect ${label} for everyone? Dobby loses access until an admin reconnects it.`)) {
+      disconnectMutation.mutate(key)
+    }
+  }
 
   const integrationMap = new Map<string, Integration>(
     integrations?.map((i) => [i.provider, i]) ?? []
@@ -118,9 +180,11 @@ export default function IntegrationsPage() {
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">Integrations</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Connect external services to give Dobby access on your behalf.
+          Services Dobby can use for the whole server. Only admins can connect or disconnect them.
         </p>
       </div>
+
+      {notice && <NoticeBanner notice={notice} />}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
@@ -128,6 +192,11 @@ export default function IntegrationsPage() {
             <Skeleton key={i} className="h-48" />
           ))}
         </div>
+      ) : isError ? (
+        // Not "Disconnected" cards: an admin would reconnect live connections and create duplicates.
+        <NoticeBanner
+          notice={{ kind: 'error', text: "Couldn't load connection status from Composio. Refresh to try again." }}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {PROVIDERS.map((provider) => (
@@ -135,7 +204,8 @@ export default function IntegrationsPage() {
               key={provider.key}
               provider={provider}
               integration={integrationMap.get(provider.key)}
-              onDisconnect={(key) => disconnectMutation.mutate(key)}
+              isAdmin={isAdmin}
+              onDisconnect={handleDisconnect}
               isDisconnecting={
                 disconnectMutation.isPending && disconnectMutation.variables === provider.key
               }

@@ -1,7 +1,6 @@
 """Local username/password auth — only active when AUTH_MODE=local or both."""
 
 import logging
-import os
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,8 +15,6 @@ from ..models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 
 
 class LocalLoginBody(BaseModel):

@@ -1,8 +1,29 @@
 # Offline test environment. Needs no Discord, Gemini or Google credentials.
 #   docker compose -f compose.test.yaml run --rm tests
 #   docker compose -f compose.test.yaml run --rm lint
+# Integration tests need the throwaway postgres (or just `make test-integration`):
+#   docker compose -f compose.test.yaml up -d postgres-test
+#   TEST_DATABASE_URL=postgresql+asyncpg://dobby:dobby@127.0.0.1:5433/dobby_test pytest tests/integration
+#   docker compose -f compose.test.yaml down
 name: dobby-test
 services:
+  # Throwaway postgres for tests/integration. Data lives on tmpfs — gone on stop.
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dobby
+      POSTGRES_PASSWORD: dobby
+      POSTGRES_DB: dobby_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dobby -d dobby_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
   tests:
     build:
       context: .

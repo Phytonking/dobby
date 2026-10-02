@@ -6,10 +6,8 @@ correctly on valid requests. Mocks Agent, SessionLocal, and Discord objects.
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 
-import discord
-import pytest
 
 from bot.config import Config
 from bot.main import Bot
@@ -19,6 +17,7 @@ from bot.main import Bot
 # Config helper — matches new 11-field signature
 # ---------------------------------------------------------------------------
 
+
 def make_config(**overrides):
     defaults = dict(
         token="fake-token",
@@ -26,21 +25,26 @@ def make_config(**overrides):
         users=frozenset({1}),
         roles=frozenset(),
         channels=frozenset(),
-        gemini_key="fake-gemini",
+        modal_base_url="https://fake.modal.direct/v1",
+        modal_token="fake-id.fake-secret",
         composio_key="fake-composio",
-        model="gemini-test",
+        model="fake-model",
         timezone="UTC",
         mention_channels=frozenset({40}),
         context_limit=12,
     )
     defaults.update(overrides)
-    return SimpleNamespace(**defaults, mentionable=lambda ch: not defaults["mention_channels"] or ch in defaults["mention_channels"],
-                           allows=lambda g, u, rs, ch: g == 10 and u in defaults["users"])
+    return SimpleNamespace(
+        **defaults,
+        mentionable=lambda ch: not defaults["mention_channels"] or ch in defaults["mention_channels"],
+        allows=lambda g, u, rs, ch: g == 10 and u in defaults["users"],
+    )
 
 
 # ---------------------------------------------------------------------------
 # Minimal Bot construction helper — patches out external connections
 # ---------------------------------------------------------------------------
+
 
 def make_bot(config=None):
     cfg = config or make_config()
@@ -59,6 +63,7 @@ def make_bot(config=None):
 # ---------------------------------------------------------------------------
 # Authorization tests
 # ---------------------------------------------------------------------------
+
 
 def test_allowed_returns_true_for_known_user():
     bot = make_bot()
@@ -94,6 +99,7 @@ def test_allowed_returns_false_for_wrong_guild():
 # Cooldown tests
 # ---------------------------------------------------------------------------
 
+
 def test_take_cooldown_allows_first_request():
     bot = make_bot()
     assert bot.take_cooldown(1) is True
@@ -114,6 +120,7 @@ def test_take_cooldown_allows_different_users_simultaneously():
 # ---------------------------------------------------------------------------
 # on_message tests
 # ---------------------------------------------------------------------------
+
 
 def make_message(bot, content="<@5> schedule a meeting"):
     msg = Mock()
@@ -243,6 +250,7 @@ def test_on_message_empty_mention_channels_allows_any():
 # Config permission tests (replaces test_docker_config.py auth tests)
 # ---------------------------------------------------------------------------
 
+
 def test_config_permissions_are_fail_closed():
     # User not in allowlist → denied even with valid guild+channel
     cfg = Config.__new__(Config)
@@ -251,28 +259,36 @@ def test_config_permissions_are_fail_closed():
     object.__setattr__(cfg, "users", frozenset({20}))
     object.__setattr__(cfg, "roles", frozenset({30}))
     object.__setattr__(cfg, "channels", frozenset({40}))
-    object.__setattr__(cfg, "gemini_key", "")
+    object.__setattr__(cfg, "modal_base_url", "")
     object.__setattr__(cfg, "composio_key", "")
     object.__setattr__(cfg, "model", "")
     object.__setattr__(cfg, "timezone", "UTC")
     object.__setattr__(cfg, "mention_channels", frozenset())
     object.__setattr__(cfg, "context_limit", 12)
 
-    assert cfg.allows(10, 20, [], 40)       # known user, right guild/channel
-    assert not cfg.allows(10, 99, [], 40)   # unknown user
-    assert not cfg.allows(11, 20, [], 40)   # wrong guild
-    assert not cfg.allows(10, 99, [31], 40) # wrong role
-    assert cfg.allows(10, 99, [30], 40)     # right role
+    assert cfg.allows(10, 20, [], 40)  # known user, right guild/channel
+    assert not cfg.allows(10, 99, [], 40)  # unknown user
+    assert not cfg.allows(11, 20, [], 40)  # wrong guild
+    assert not cfg.allows(10, 99, [31], 40)  # wrong role
+    assert cfg.allows(10, 99, [30], 40)  # right role
 
 
 def test_config_role_gating():
     cfg = Config.__new__(Config)
     for attr, val in [
-        ("token", ""), ("guild", 10), ("users", frozenset()), ("roles", frozenset({30})),
-        ("channels", frozenset()), ("gemini_key", ""), ("composio_key", ""),
-        ("model", ""), ("timezone", "UTC"), ("mention_channels", frozenset()), ("context_limit", 12),
+        ("token", ""),
+        ("guild", 10),
+        ("users", frozenset()),
+        ("roles", frozenset({30})),
+        ("channels", frozenset()),
+        ("modal_base_url", ""),
+        ("composio_key", ""),
+        ("model", ""),
+        ("timezone", "UTC"),
+        ("mention_channels", frozenset()),
+        ("context_limit", 12),
     ]:
         object.__setattr__(cfg, attr, val)
 
-    assert cfg.allows(10, 999, [30], 99)     # role grants access
-    assert not cfg.allows(10, 999, [], 99)   # no role → denied
+    assert cfg.allows(10, 999, [30], 99)  # role grants access
+    assert not cfg.allows(10, 999, [], 99)  # no role → denied

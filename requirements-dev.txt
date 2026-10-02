@@ -1,0 +1,5 @@
+# Everything needed to run every suite on the host: bot deps (incl. pytest,
+# ruff, alembic) plus dashboard deps (fastapi, bcrypt, ...) for
+# dashboard/tests and tests/integration.
+-r requirements.txt
+-r dashboard/requirements.txt

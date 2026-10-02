@@ -12,7 +12,7 @@ from .config import Config
 from .contacts import mask, valid_email
 from .db import SessionLocal
 from .memory import load_guild_settings, save_contact, list_contacts, lookup_contact
-from .models import ConfigError, UserError
+from .models import ConfigError
 from .voice import say
 
 log = logging.getLogger("scheduler")
@@ -66,7 +66,10 @@ class Bot(discord.Client):
         def denied(reason, status=None):
             log.warning(
                 "mention_access_denied reason=%s user=%s channel=%s http_status=%s",
-                reason, user_id, channel_id, status,
+                reason,
+                user_id,
+                channel_id,
+                status,
             )
             return False
 
@@ -147,9 +150,7 @@ class Bot(discord.Client):
             else:
                 await interaction.response.send_message(text, ephemeral=True)
 
-        @self.tree.command(
-            name="schedule", description="Create, change or delete a Google Calendar meeting with Gemini"
-        )
+        @self.tree.command(name="schedule", description="Create, change or delete a Google Calendar meeting")
         @app_commands.guild_only()
         @app_commands.describe(request="Describe one meeting operation with a date, time and duration")
         async def schedule(
@@ -176,9 +177,7 @@ class Bot(discord.Client):
                 log.warning("schedule_failed type=%s", type(exc).__name__)
                 await interaction.edit_original_response(content=say("generic_failure"))
 
-        @self.tree.command(
-            name="events", description="List upcoming events in Google Calendar"
-        )
+        @self.tree.command(name="events", description="List upcoming events in Google Calendar")
         @app_commands.guild_only()
         async def events(interaction: discord.Interaction, days: app_commands.Range[int, 1, 90] = 14):
             if not await self.gate(interaction):
@@ -263,7 +262,10 @@ class Bot(discord.Client):
                     else:
                         try:
                             await save_contact(
-                                session, guild_id, name, email.strip().strip("<>"),
+                                session,
+                                guild_id,
+                                name,
+                                email.strip().strip("<>"),
                                 added_by=str(interaction.user.id),
                             )
                             await session.commit()
@@ -293,8 +295,7 @@ class Bot(discord.Client):
                     "`/contacts action:add name:Maya email:maya@example.com` → Dobby remembers who to invite\n"
                     "Default duration: 1 hour. Mention Dobby in an enabled channel to schedule. "
                     "Dobby uses Composio to interact with Google Calendar, GitHub, and Notion. "
-                    "Conversation history is remembered per channel. "
-                    "Your request and conversation go to Gemini; free-tier data may improve Google products."
+                    "Conversation history is remembered per channel."
                 )
             )
 
