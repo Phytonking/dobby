@@ -97,14 +97,21 @@ async def test_15_dashboard_connection_lifecycle(clients, monkeypatch):
     assert (await admin.get("/integrations/notion/connect")).headers[
         "location"
     ] == "https://connect.example/authorize"
-    assert (await admin.get("/integrations/notion/callback?status=success")).status_code == 400
+    # Failed callbacks return to the page with an error banner and record nothing.
+    incomplete = await admin.get("/integrations/notion/callback?status=success")
+    assert incomplete.status_code == 307
+    assert incomplete.headers["location"].endswith("/dashboard/integrations?error=notion")
+    assert (await admin.get("/integrations")).json() == []
     callback = "/integrations/notion/callback?status=success&connected_account_id=ci-account"
-    assert (await admin.get(callback)).status_code == 307
+    connected = await admin.get(callback)
+    assert connected.headers["location"].endswith("/dashboard/integrations?connected=notion")
     assert (await admin.get("/integrations")).json()[0]["provider"] == "notion"
     assert (await admin.delete("/integrations/notion")).status_code == 204
     provider.connected_accounts.delete.assert_called_once_with(nanoid="ci-account")
     assert (await admin.get("/integrations")).json() == []
-    assert (await admin.get(callback)).status_code == 400
+    stale = await admin.get(callback)
+    assert stale.headers["location"].endswith("/dashboard/integrations?error=notion")
+    assert (await admin.get("/integrations")).json() == []
 
 
 async def test_18_dashboard_concurrent_users(clients):
