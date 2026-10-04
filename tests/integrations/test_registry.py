@@ -52,3 +52,29 @@ def test_build_registry_with_nothing_yields_no_tools():
     with patch("bot.integrations.declarations_for", return_value=[]):
         registry = build_registry("toolset", ())
     assert registry.tools == [] and registry.local == {} and registry.prompt == ""
+
+
+def test_calendar_writes_are_local_and_create_and_edit_require_deferred_invitees():
+    from bot.integrations import google_calendar
+
+    with patch(
+        "bot.integrations.declarations_for", side_effect=lambda ts, actions: [decl(n) for n in actions]
+    ):
+        registry = build_registry("toolset", (google_calendar.INTEGRATION,))
+    by_name = {d.name: d.parameters for d in registry.tools[0].function_declarations}
+    for name in ("GOOGLECALENDAR_CREATE_EVENT", "GOOGLECALENDAR_PATCH_EVENT"):
+        assert "deferred_invitees" in by_name[name]["properties"]
+        assert by_name[name]["required"] == ["deferred_invitees"]
+    for name in (
+        "GOOGLECALENDAR_DELETE_EVENT",
+        "GOOGLECALENDAR_FIND_EVENT",
+        "GOOGLECALENDAR_FIND_FREE_SLOTS",
+    ):
+        assert "deferred_invitees" not in by_name[name].get("properties", {})
+    # Every write goes through the confirmation-gated handler; reads go straight to Composio.
+    assert {n for n in registry.local if n.endswith("_EVENT")} == {
+        "GOOGLECALENDAR_CREATE_EVENT",
+        "GOOGLECALENDAR_PATCH_EVENT",
+        "GOOGLECALENDAR_DELETE_EVENT",
+    }
+    assert "lookup_calendar_email" in registry.local

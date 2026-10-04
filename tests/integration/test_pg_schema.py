@@ -69,3 +69,19 @@ def test_dashboard_models_match_migrated_schema(migrated_db):
 
     real_drift = [d for d in diffs if is_real(d)]
     assert not real_drift, "ORM models drifted from migrations:\n" + "\n".join(repr(d) for d in real_drift)
+
+
+def test_calendar_invites_tracks_approval_prompts(migrated_db):
+    async def check(session):
+        rows = await session.execute(
+            sa.text(
+                "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns "
+                "WHERE table_name = 'calendar_invites' AND column_name IN ('proposed_at', 'attempts')"
+            )
+        )
+        columns = {r[0]: r[1:] for r in rows}
+        assert columns["proposed_at"][0] == "timestamp with time zone" and columns["proposed_at"][1] == "YES"
+        assert columns["attempts"][0] == "integer" and columns["attempts"][1] == "NO"
+        assert columns["attempts"][2] == "0"
+
+    run_db(check)

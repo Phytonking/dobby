@@ -32,11 +32,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = "postgresql+asyncpg://dobby:dobby@127.0.0.1:5433/dobby_test"
 EVAL_DIR = REPO_ROOT / "evals"
 REQUESTER = "900000000000000000"
-# Known people for invite cases; Raj deliberately has no email so the missing-invitee path runs.
+# Known people for invite cases; Raj deliberately has no email so the missing-invitee path runs, and the
+# two Sams share a first name (only one has an email) so the ambiguous-name path runs.
 PEOPLE = (
     ("900000000000000001", "Maya Patel", "maya@example.edu"),
     ("900000000000000002", "Leonard Cho", "leonard@example.edu"),
     ("900000000000000003", "Raj Mehta", None),
+    ("900000000000000004", "Sam Rivera", "sam.rivera@example.edu"),
+    ("900000000000000005", "Sam Okafor", None),
 )
 
 sys.path.insert(0, str(REPO_ROOT))
@@ -82,8 +85,13 @@ def recording_agent_class():
         calls: list
 
         async def _call(self, ctx, name, params):
-            self.calls.append({"tool": name, "args": params})
-            return await super()._call(ctx, name, params)
+            record = {"tool": name, "args": params}
+            self.calls.append(record)
+            result = await super()._call(ctx, name, params)
+            record["ok"] = bool(result.get("success"))
+            if result.get("error"):
+                record["error"] = str(result["error"])[:200]
+            return result
 
     return RecordingAgent
 
@@ -147,7 +155,7 @@ async def seed_people(session_factory):
 # ---------------------------------------------------------------------------
 
 
-def judge(case, tool_calls, final_reply, error):
+def judge(case, tool_calls, final_reply, error, previews=()):
     """Return (verdict, reasons). FAIL = hard break, WARN = soft miss."""
     reasons = []
     if error:
@@ -172,6 +180,11 @@ def judge(case, tool_calls, final_reply, error):
         reasons.append("neither used a tool nor asked a clarifying question")
     if not (final_reply or "").strip():
         reasons.append("empty reply")
+    if case.get("check"):
+        try:
+            reasons.extend(case["check"](tool_calls, list(previews)))
+        except Exception as exc:  # a broken check must not read as a pass
+            reasons.append(f"check raised {type(exc).__name__}: {exc}")
     if reasons:
         return "FAIL", reasons
 
@@ -208,7 +221,8 @@ async def run_case(agent, stub, session_factory, case, run_tag):
 
     duration_ms = int((time.monotonic() - started) * 1000)
     final_reply = transcript[-1]["dobby"] if transcript else ""
-    verdict, reasons = judge(case, agent.calls, final_reply, error)
+    previews = [preview for turn in transcript for preview in turn["pending"]]
+    verdict, reasons = judge(case, agent.calls, final_reply, error, previews)
     return {
         "id": case["id"],
         "category": case["category"],

@@ -12,10 +12,10 @@ from ...voice import say
 from .. import INTEGRATIONS, build_registry
 from . import commands as general_commands
 from .confirm import ConfirmView, preview_text
-from .calendar_confirm import present_calendar
+from .calendar_confirm import present_calendar, present_invite_approval
 from .context import gather_context, resolve_mentions
 from .emails import capture_email, recover_recent_emails
-from ..google_calendar.invitations import reconcile_invites
+from ..google_calendar.invitations import APPROVAL_SECONDS, reconcile_invites
 
 log = logging.getLogger("scheduler")
 
@@ -193,11 +193,22 @@ class Bot(discord.Client):
     # ------------------------------------------------------------------ lifecycle
 
     async def reconcile_calendar_invites(self):
+        """Ask requesters to approve waiting invitations whose email has arrived; returns how many."""
         try:
             return await reconcile_invites(self)
         except Exception as exc:
             log.warning("invite_reconciliation_failed type=%s", type(exc).__name__)
             return 0
+
+    async def ask_calendar_approval(self, channel_id, requester_id, actions) -> bool:
+        """Post late-invitation approvals in the requester's original channel; False if that failed."""
+        try:
+            channel = self.get_channel(channel_id) or await self.fetch_channel(channel_id)
+            await present_invite_approval(self, channel, actions, requester_id, APPROVAL_SECONDS)
+        except discord.HTTPException as exc:
+            log.warning("invite_approval_unavailable status=%s", exc.status)
+            return False
+        return True
 
     async def on_raw_reaction_add(self, payload):
         entry = self.calendar_confirmations.get(payload.message_id)
@@ -206,6 +217,7 @@ class Bot(discord.Client):
                 await entry.react(payload)
             except Exception as exc:
                 log.warning("calendar_confirmation_failed type=%s", type(exc).__name__)
+                await entry.release("expired")  # no-op for anything that already ran
                 await entry.finish(say("generic_failure"))
 
     async def close(self):

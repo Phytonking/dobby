@@ -6,7 +6,7 @@ Each layer catches a different class of bug; `make help` lists every target.
 |---|---|---|---|
 | Bot unit | `tests/` (incl. `tests/integrations/<service>/`) | nothing | agent loop, provider adapters and failover (`test_ai_models.py`), Composio schema → declaration bridge (`test_composio.py`), Discord client/commands/confirmations, each integration's tools |
 | Dashboard | `dashboard/tests/` | nothing | auth and sessions, OAuth and local login, admin gating, service-account routes, `LOCAL_MODE` |
-| Postgres | `tests/integration/` | Docker | migrations apply, ORM-vs-schema drift, `bot/memory.py` raw SQL (upserts, timestamp guards), dashboard model constraints, the agent loop end to end against a real database |
+| Postgres | `tests/integration/` | Docker | migrations apply, ORM-vs-schema drift, `bot/memory.py` raw SQL (upserts, timestamp guards), late-invitation approvals (atomic claims, the per-event lock, retry timestamps), dashboard model constraints, the agent loop end to end against a real database |
 | Live Composio | `tests/live/` | `COMPOSIO_API_KEY` | a curated action renamed upstream or a stale `TOOLKIT_VERSIONS` pin |
 | Docker | `compose.test.yaml` | Docker | the unit suite and lint inside the shipped Python 3.12 image, read-only, no network |
 | System regression | `test_regression/` | Docker | built images, real Postgres, bot smoke, dashboard and frontend in a browser ([README](../test_regression/README.md)) |

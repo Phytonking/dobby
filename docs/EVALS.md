@@ -40,6 +40,7 @@ Fields, all optional except `id`, `category` and `turns`:
 | `tool_or_question` | pass if a tool ran or the reply asks a question |
 | `fail_tools` | every stubbed Composio execution returns an error |
 | `max_tool_calls` | ceiling on tool calls across the case |
+| `check` | callable `(tool_calls, previews) -> [failure reasons]` for assertions on arguments, e.g. who is in `attendees` and which Discord IDs are deferred; each call is `{tool, args, ok, error}` |
 
 Verdicts: **FAIL** for a hard break (forbidden or missing tool, cap exceeded, empty reply,
 exception), **WARN** when only `reply_any` missed — read the transcript; often the model was
@@ -47,7 +48,7 @@ right and phrased it differently. The run exits non-zero on any FAIL.
 
 To add a case, append it to `CASES`. If it relies on a Composio result, add the canned data to
 `STUB_RESULTS` (keyed by tool-name prefix). People the model can look up are seeded in
-`scripts/eval.py` (`PEOPLE`); Raj intentionally has no email so the missing-invitee path runs.
+`scripts/eval.py` (`PEOPLE`); Raj intentionally has no email so the missing-invitee path runs, and the two Sams share a first name (only one has an email) so the ambiguous-name path runs.
 
 ## Reading results
 

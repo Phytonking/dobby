@@ -70,7 +70,11 @@ class FakeModel:
         if any(w in last_user.lower() for w in TOOL_WORDS):
             self._wrap_up = True
             start = (datetime.now() + timedelta(days=1)).replace(hour=15, minute=0, second=0, microsecond=0)
-            args = {"summary": last_user[:60], "start_datetime": start.isoformat(timespec="seconds")}
+            args = {
+                "summary": last_user[:60],
+                "start_datetime": start.isoformat(timespec="seconds"),
+                "deferred_invitees": [],
+            }
             return httpx.Response(200, json=_tool_call("GOOGLECALENDAR_CREATE_EVENT", args))
         return httpx.Response(200, json=_reply(f"(fake model) You said: {last_user}"))
 

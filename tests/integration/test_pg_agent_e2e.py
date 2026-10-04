@@ -96,7 +96,11 @@ def test_lookup_tool_reads_real_users_table_and_is_audited(migrated_db, monkeypa
 
 def test_calendar_create_is_queued_for_confirmation_not_executed(migrated_db, monkeypatch):
     guild = uuid.uuid4().hex
-    event = {"summary": "Leonard party session", "start_datetime": "2026-10-03T17:00:00"}
+    event = {
+        "summary": "Leonard party session",
+        "start_datetime": "2026-10-03T17:00:00",
+        "deferred_invitees": [],
+    }
     install_model(
         monkeypatch, [tool_call("GOOGLECALENDAR_CREATE_EVENT", event), reply("Please confirm in Discord.")]
     )
@@ -136,3 +140,87 @@ def test_failed_composio_tool_is_audited_as_error_and_reported_to_the_model(migr
     run_db(check)
     tool_message = next(m for m in seen[1]["messages"] if m["role"] == "tool")
     assert json.loads(tool_message["content"]) == failure
+
+
+def numeric_id():
+    return str(uuid.uuid4().int % 10**17 + 10**17)
+
+
+def test_calendar_write_without_deferred_invitees_is_refused_and_the_model_is_told_why(
+    migrated_db, monkeypatch
+):
+    guild = uuid.uuid4().hex
+    seen = install_model(
+        monkeypatch,
+        [
+            tool_call(
+                "GOOGLECALENDAR_CREATE_EVENT", {"summary": "Sync", "start_datetime": "2026-10-03T17:00:00"}
+            ),
+            reply("Dobby will try again."),
+        ],
+    )
+
+    async def check(session):
+        result = await make_agent().run(session, "sync saturday 5pm", guild, "chan", "1")
+        assert result.pending == []
+        assert await audit(session, guild) == [("GOOGLECALENDAR_CREATE_EVENT", "error")]
+
+    run_db(check)
+    tool_message = next(m for m in seen[1]["messages"] if m["role"] == "tool")
+    assert "deferred_invitees is required" in json.loads(tool_message["content"])["error"]
+
+
+def test_person_without_an_email_is_deferred_on_the_exact_id_the_lookup_returned(migrated_db, monkeypatch):
+    tag, guild, raj_id = uuid.uuid4().hex[:8], uuid.uuid4().hex, numeric_id()
+    create = {
+        "summary": "Planning",
+        "start_datetime": "2026-10-03T17:00:00",
+        "deferred_invitees": [{"name": f"Raj {tag}", "discord_id": raj_id}],
+    }
+    install_model(
+        monkeypatch,
+        [
+            tool_call("lookup_calendar_email", {"name": f"Raj {tag}"}),
+            tool_call("GOOGLECALENDAR_CREATE_EVENT", create),
+            reply("Dobby has drafted it."),
+        ],
+    )
+
+    async def check(session):
+        await session.execute(
+            sa.text("INSERT INTO users (discord_id, display_name, calendar_email) VALUES (:d, :n, NULL)"),
+            {"d": raj_id, "n": f"Raj {tag}"},
+        )
+        await session.commit()
+        result = await make_agent().run(session, f"plan with Raj {tag}", guild, "chan", "1")
+        assert [a.label for a in result.pending] == ["Create meeting"]
+        preview = result.pending[0].preview
+        assert f"**Waiting for email:** Raj {tag} (<@{raj_id}>)" in preview
+        assert "ask you to approve inviting them" in preview
+
+    run_db(check)
+
+
+def test_a_made_up_discord_id_is_refused_even_after_a_lookup(migrated_db, monkeypatch):
+    tag, guild = uuid.uuid4().hex[:8], uuid.uuid4().hex
+    create = {
+        "summary": "Planning",
+        "start_datetime": "2026-10-03T17:00:00",
+        "deferred_invitees": [{"name": f"Nobody {tag}", "discord_id": numeric_id()}],
+    }
+    seen = install_model(
+        monkeypatch,
+        [
+            tool_call("lookup_calendar_email", {"name": f"Nobody {tag}"}),
+            tool_call("GOOGLECALENDAR_CREATE_EVENT", create),
+            reply("Dobby needs an @mention."),
+        ],
+    )
+
+    async def check(session):
+        result = await make_agent().run(session, f"plan with Nobody {tag}", guild, "chan", "1")
+        assert result.pending == []
+
+    run_db(check)
+    tool_message = [m for m in seen[2]["messages"] if m["role"] == "tool"][-1]
+    assert "did not come from an @mention or a lookup" in json.loads(tool_message["content"])["error"]

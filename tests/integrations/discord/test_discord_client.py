@@ -301,3 +301,42 @@ def test_config_reads_context_limit_and_optional_ids(monkeypatch):
         monkeypatch.setenv("CONTEXT_MESSAGE_LIMIT", bad)
         with pytest.raises(ConfigError):
             Config.load()
+
+
+# ---------------------------------------------------------------------------
+# Late-invitation approvals
+# ---------------------------------------------------------------------------
+
+
+def test_ask_calendar_approval_posts_in_the_original_channel_or_reports_failure():
+    from bot.integrations.google_calendar.invitations import APPROVAL_SECONDS
+
+    async def run():
+        bot = make_bot()
+        channel = Mock()
+        with (
+            patch.object(bot, "get_channel", return_value=channel),
+            patch("bot.integrations.discord.client.present_invite_approval", new=AsyncMock()) as present,
+        ):
+            assert await Bot.ask_calendar_approval(bot, 40, 7, ["action"]) is True
+        present.assert_awaited_once_with(bot, channel, ["action"], 7, APPROVAL_SECONDS)
+
+        fetched = Mock()
+        with (
+            patch.object(bot, "get_channel", return_value=None),
+            patch.object(bot, "fetch_channel", new=AsyncMock(return_value=fetched)),
+            patch("bot.integrations.discord.client.present_invite_approval", new=AsyncMock()) as present,
+        ):
+            assert await Bot.ask_calendar_approval(bot, 41, 7, ["action"]) is True
+        assert present.await_args.args[1] is fetched
+
+        gone = discord.NotFound(Mock(status=404, reason="Not Found"), "unknown channel")
+        with (
+            patch.object(bot, "get_channel", return_value=None),
+            patch.object(bot, "fetch_channel", new=AsyncMock(side_effect=gone)),
+            patch("bot.integrations.discord.client.present_invite_approval", new=AsyncMock()) as present,
+        ):
+            assert await Bot.ask_calendar_approval(bot, 42, 7, ["action"]) is False
+        present.assert_not_awaited()
+
+    asyncio.run(run())

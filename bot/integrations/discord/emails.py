@@ -80,10 +80,11 @@ async def capture_email(bot, message, *, history=False):
         if not history:
             text = say("email_saved") if changed else "Dobby already has a newer email update for you."
             await message.reply(text, mention_author=False)
-            invited = await bot.reconcile_calendar_invites()
-            if invited:
+            asked = await bot.reconcile_calendar_invites()
+            if asked:
                 await message.reply(
-                    f"Dobby has completed {invited} waiting calendar invitation(s)!", mention_author=False
+                    f"Dobby has asked for approval to invite {asked} waiting guest(s) to their meetings!",
+                    mention_author=False,
                 )
     except Exception as exc:
         log.warning("email_capture_failed type=%s", type(exc).__name__)

@@ -320,7 +320,7 @@ Teammate: let's do the launch checklist next Tuesday at 2pm
 You: @Dobby make this a meeting
 ```
 
-Meetings default to one hour in `TEAM_TIMEZONE`. Dobby matches a typed name against registered users' display names (exact, then first name, then a close match) and resolves `@mentions` directly; if someone has no calendar email on file it says so rather than guessing. `/events days:30` lists upcoming events.
+Meetings default to one hour in `TEAM_TIMEZONE`. Dobby matches a typed name against registered users' full or first names and resolves `@mentions` directly. If a name fits more than one person Dobby asks which; a near miss is only ever a suggestion, never an invitation. The preview shows each invitee as `Name (email)` so you can check who was picked. If someone has no calendar email yet, the meeting is still scheduled, and when they add one Dobby posts the address it found and asks you to approve inviting them. Nothing is added to a guest list without your 🟢. `/events days:30` lists upcoming events.
 
 ### Notion
 

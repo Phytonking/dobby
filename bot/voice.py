@@ -17,6 +17,7 @@ RESPONSE_DIR = Path(__file__).parent / "responses"
 
 # Placeholders each key is allowed to use. Keys absent here take no placeholders.
 FIELDS = {
+    "calendar_invite_intro": {"requester"},
     "needs_help": {"question"},
     "email_shown": {"email"},
     "published": {"label"},
@@ -30,6 +31,11 @@ FALLBACK = {
     "calendar_updated": "Dobby has updated the meeting! Everything is in its proper place now.",
     "calendar_created": "Dobby has created the meeting! Happy to help, Dobby is.",
     "calendar_confirm_instructions": "React with 🟢 to confirm or 🔴 to cancel. Dobby is waiting.",
+    "calendar_invite_intro": (
+        "Good news, {requester}! Someone Dobby was waiting on has shared an email. "
+        "Please check the invitation below, if you please."
+    ),
+    "calendar_invite_outro": "Dobby invites no one until you confirm. This question stays open for 15 minutes.",
     "calendar_preview_outro": "Dobby will wait for your confirmation before changing anything. Confirm within 2 minutes. Times include their UTC offset.",
     "calendar_preview_intro": "Dobby has prepared a meeting proposal! Please check the details, if you please.",
     "working": "Dobby is on it! Dobby will reply here shortly…",

@@ -6,14 +6,13 @@ the set into what the agent needs. The Discord package is the transport, not an 
 """
 
 from dataclasses import dataclass, field
-from copy import deepcopy
 
 from bot.AIModels import FunctionDeclaration, Tool
 
 from ..composio import declarations_for
 from .base import Integration, LocalTool
 from . import google_calendar, instagram, linkedin, notion
-from .google_calendar.proposals import WRITE_ACTIONS, prepare_calendar_action
+from .google_calendar.proposals import WRITE_ACTIONS, prepare_calendar_action, with_deferred_invitees
 
 INTEGRATIONS: tuple[Integration, ...] = (
     google_calendar.INTEGRATION,
@@ -37,25 +36,11 @@ def build_registry(toolset, integrations: tuple[Integration, ...] = INTEGRATIONS
     owner: dict[str, str] = {}
     for integration in integrations:
         for declaration in declarations_for(toolset, integration.actions):
-            if integration.key == "google_calendar" and declaration.name in WRITE_ACTIONS:
-                schema = deepcopy(declaration.parameters or {"type": "object"})
-                schema.setdefault("properties", {})["deferred_invitees"] = {
-                    "type": "array",
-                    "description": "Requested invitees whose email is unknown. "
-                    "They will be invited automatically later; do not delay scheduling. "
-                    "Use [] if nobody is waiting for this particular event.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "discord_id": {"type": "string"},
-                        },
-                        "required": ["name"],
-                    },
-                }
-                declaration = FunctionDeclaration(
-                    name=declaration.name, description=declaration.description, parameters=schema
-                )
+            if integration.key == "google_calendar" and WRITE_ACTIONS.get(declaration.name) in (
+                "create",
+                "update",
+            ):
+                declaration = with_deferred_invitees(declaration)
             declarations.append(declaration)
             owner[declaration.name] = integration.key
             if integration.key == "google_calendar" and declaration.name in WRITE_ACTIONS:

@@ -8,8 +8,9 @@ tool-call metadata is recorded (to `agent_actions`). Anything published to the o
 (Instagram, LinkedIn) is previewed in Discord and waits for the requester to press **Confirm**.
 Calendar writes use the meeting proposal and 🟢 / 🔴 reaction flow restored from `b79b732`
 (the parent of Avi Agola's `4182a50` reconstruction).
-Missing invitee emails do not block that proposal or event creation. Confirmation also approves
-the specific deferred invitations listed in the preview.
+Missing invitee emails do not block that proposal or event creation. When a missing person's email
+arrives, Dobby asks the requester to approve adding that exact address; nothing reaches a guest list
+without a 🟢.
 
 The dashboard (`dashboard/`) and frontend (`frontend/`) are documented separately. The bot talks
 to them only through the shared Postgres database and the shared Composio entity. Dashboard `AUTH_MODE` (`oauth`, `local`, `both`) does not change Discord bot allowlists or Composio service authorization. Local usernames/password hashes belong to the dashboard; the bot does not authenticate with them. A local admin needs a registered Discord ID to use bot features that look up the user roster. See [dashboard login setup](../README.md#step-5-dashboard-login).
@@ -45,8 +46,8 @@ Tests mirror this under `tests/` and `tests/integrations/<service>/`.
 | --- | --- |
 | `Integration` | `key`, `label`, Composio `app`, curated `actions` the model may call directly, `local_tools`, a `prompt` paragraph, `register_commands(bot)`, `help_lines` |
 | `LocalTool` | An `AIModels.FunctionDeclaration` plus an async handler that runs in-process (`(RunContext, params) -> dict`) |
-| `PendingAction` | Something that must not happen until the requester confirms: `integration`, `label`, `preview`, and an async `execute()` |
-| `RunContext` | Per-run state a handler may use: DB session, guild/channel/user ids, the Composio toolset, `Config`, and `pending` — `ctx.queue(action)` parks a `PendingAction` and tells the model it is awaiting confirmation |
+| `PendingAction` | Something that must not happen until the requester confirms: `integration`, `label`, `preview`, an async `execute()`, and an optional `release(outcome)` called with `cancelled` or `expired` when it will never run |
+| `RunContext` | Per-run state a handler may use: DB session, guild/channel/user ids, the Composio toolset, `Config`, `known_discord_ids` (IDs from @mentions and lookups, the only ones a write tool accepts), and `pending` — `ctx.queue(action)` parks a `PendingAction` and tells the model it is awaiting confirmation |
 
 `build_registry()` walks `INTEGRATIONS`, asks Composio for the schema of every curated action
 (`composio.declarations_for`, which preserves JSON Schema and skips
@@ -131,34 +132,52 @@ These deterministic parsers save only the actual Discord author's row; they do n
 assign someone else's identity or modify roles and login credentials. `/email show` remains masked
 and `/email remove` clears the address. All existing guild/channel/user/role checks still apply.
 
-`google_calendar/tools.py` records missing lookups in the request. Calendar write schemas add a
-local-only `deferred_invitees` list, stripped before Composio execution. Each entry includes a name
-and, when known, a Discord ID. The preview asks for those addresses while proceeding with known
-guests. Only a successful, confirmed event write creates durable `calendar_invites` rows tied to
-the actual returned event ID. Cancelled/unconfirmed proposals never authorize a later invitation.
+`lookup_calendar_email` (`google_calendar/tools.py`) resolves a typed name with
+`memory.match_user_by_name`. A name fits a person when it equals their full display name or their first
+name, and everyone registered counts, with or without an email, so a first name shared with someone who
+has no email is still a tie. One fit is a match; several are ambiguous and the model must ask which
+(identical display names can only be told apart by an @mention); a near miss comes back only as a
+suggestion for the requester to confirm. Nothing fuzzy ever resolves to an address. A person who matches
+but has no email, or who was @mentioned, is handed back with an exact Discord ID.
 
-After an email save, a successful confirmed write with missing invitees, or a later agent request,
-`google_calendar/invitations.py` retries waiting invitations. It rechecks the original requester's
-access, resolves an exact Discord ID or an unambiguous exact/first name (never fuzzy), fetches the
-current guest list, and patches it to add the missing address with notifications enabled. Existing
-guest addresses are retained. PostgreSQL transaction advisory locks serialize Dobby's updates to
-the same event; completed rows and existing-attendee checks suppress duplicates. Failed attempts
-remain pending for the next trigger. Finished/cancelled events are not invited to. There is no
-background polling loop; a later email save or request retries provider failures.
+Calendar create and edit calls must carry `deferred_invitees` (`[]` when nobody is waiting). Each entry
+needs a name and an exact Discord ID that came from an @mention in the request or from a lookup
+(`RunContext.known_discord_ids`); anything else is refused so the model asks for an @mention instead of
+guessing. The preview lists invitees as `Name (email)` where the address is registered and waiting
+people with their registered name and a live @mention. Only a successful, confirmed event write creates
+durable `calendar_invites` rows, one per Discord ID, tied to the returned event ID. Cancelled or
+unconfirmed proposals never create one.
+
+After an email save, a confirmed write with missing invitees, or any later agent request,
+`google_calendar/invitations.py` `reconcile_invites` looks for waiting rows whose person now has a valid
+email. **It never edits a calendar.** Resolving who a row is for is database-only; only rows that resolved
+cost a Discord access check and a calendar read. For each it re-checks the requester's access and reads
+the event (over or cancelled → `expired`; guest already present → `completed`), claims the row
+atomically, and posts one approval message per requester and channel showing
+`Guest: Name (email)`, the meeting and its time, pinging only the requester. Only the requester's 🟢 patches
+the guest list. That edit runs under a per-event Postgres advisory lock and first re-checks that the row,
+the person's address and the meeting are unchanged, keeping every existing guest. 🔴 sets `declined`; no
+answer for 15 minutes (or a failed edit) returns the row to the queue, asked again no sooner than an hour
+later and at most three times, then `expired`. A prompt lost to a restart is reopened after it goes
+stale. Rows older than 90 days expire. Status flow: `pending → proposed → completed | declined`, or
+`expired`. Rows saved before IDs were required matched a typed name; they still resolve only by an
+unambiguous name and still need the approval.
 
 Before an agent request, `discord/emails.py` can recover explicit self-email declarations and
 prompt replies from the same `CONTEXT_MESSAGE_LIMIT` human-message window in the current channel.
 It respects `ALLOWED_CHANNEL_IDS` and `MENTION_CHANNEL_IDS`, and never stores chat text. Message
 timestamps prevent older context from overwriting a newer address or undoing `/email remove`.
-Apply migration **004** before running this bot version; it adds `calendar_invites` and
-`users.calendar_email_updated_at`. Pending invitations survive restarts; unconfirmed previews do not.
+Apply migrations **004** and **005** before running this bot version; they add `calendar_invites`,
+`users.calendar_email_updated_at`, and the prompt tracking columns `proposed_at` and `attempts`. Pending
+invitations survive restarts; unconfirmed previews and open approval prompts do not (a lost prompt is
+reopened and asked again).
 
 All durable state lives in Postgres (Alembic migrations in `migrations/versions/`):
 
 | Table | Bot usage |
 | --- | --- |
 | `users` | Read by `discord_id` (mentions, `/email show`) and by `display_name` (`lookup_calendar_email`); `/email set` and `remove` update `calendar_email` for the caller's own row |
-| `calendar_invites` | Confirmed event IDs, requested people, original requester/channel, and pending/completed/expired status; no message content |
+| `calendar_invites` | Confirmed event IDs, waiting people (exact Discord ID), original requester/channel, status (`pending`/`proposed`/`completed`/`declined`/`expired`), prompt time and attempt count; no message content |
 | `agent_actions` | Written: one row per tool call or publish, metadata only (`discord_id`, resolved `user_id`, tool name, `ok`/`error`, duration). Arguments and results are never stored |
 
 `sessions` and `integrations` belong to the dashboard. Configuration is environment-only. There is

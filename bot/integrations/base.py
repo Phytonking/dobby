@@ -20,6 +20,9 @@ class PendingAction:
     label: str  # short, e.g. "LinkedIn post"
     preview: str  # exactly what will be published, shown in Discord
     execute: Callable[[], Awaitable[dict]]  # runs the Composio call(s); returns {"success": bool, ...}
+    # Called with "cancelled" or "expired" when the requester declines or never confirms, so anything
+    # the action reserved can be given back. Never called after a confirmed run.
+    release: Callable[[str], Awaitable[None]] | None = None
 
 
 @dataclass
@@ -33,7 +36,9 @@ class RunContext:
     toolset: object = None  # Composio client, for tools that build PendingActions
     config: object = None  # bot Config (entity id, Instagram account id, ...)
     pending: list[PendingAction] = field(default_factory=list)
-    missing_invitees: dict[str, dict] = field(default_factory=dict)
+    # Discord IDs the model may hand to write tools: @mentions in the request and lookup results.
+    # An ID outside this set came from nowhere Dobby can vouch for and is refused.
+    known_discord_ids: set[str] = field(default_factory=set)
 
     def queue(self, action: PendingAction) -> dict:
         """Park an action for confirmation and tell the model what happened."""

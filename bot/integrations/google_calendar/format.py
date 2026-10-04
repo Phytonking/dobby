@@ -43,7 +43,13 @@ def emails(event):
     return [a["email"].lower() for a in event.get("attendees", []) if a.get("email")]
 
 
-def changes(existing, body, zone):
+def invitee(email, names=None):
+    """'Maya Chen (maya@uw.edu)' when the address belongs to someone registered, else the bare address."""
+    name = (names or {}).get(email.lower())
+    return f"{name} ({email})" if name else email
+
+
+def changes(existing, body, zone, names=None):
     """Old → new for every field an update touches, as 'Label: old → new' strings."""
     existing = existing or {}
     out = []
@@ -65,5 +71,5 @@ def changes(existing, body, zone):
     if "attendees" in body:
         added = [e for e in emails(body) if e not in set(emails(existing))]
         if added:
-            out.append("Invitees added: " + ", ".join(added))
+            out.append("Invitees added: " + ", ".join(invitee(e, names) for e in added))
     return out

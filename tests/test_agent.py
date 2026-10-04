@@ -259,6 +259,33 @@ def test_local_tool_runs_in_process_and_can_queue_a_pending_action():
     asyncio.run(run())
 
 
+def test_run_context_knows_only_ids_from_mentions_and_registered_people():
+    seen = {}
+
+    async def spy(ctx, params):
+        seen["ids"] = set(ctx.known_discord_ids)
+        return {"success": True}
+
+    tool = LocalTool(declaration("spy"), spy)
+
+    async def run():
+        with patch("bot.AIModels.genai.Client") as client, patch("bot.agent.record_action", new=AsyncMock()):
+            gen(client).side_effect = [make_fn_candidate("spy", {}), make_text_candidate("ok")]
+            await Agent(make_config(), registry(local=(tool,))).run(
+                session=AsyncMock(),
+                **run_kwargs(
+                    request="invite @Maya and <@777> and <@!888>, plus 123456",
+                    known_people=[
+                        {"display_name": "Maya", "calendar_email": None, "discord_id": "555"},
+                        {"display_name": "NoId", "calendar_email": None},
+                    ],
+                ),
+            )
+        assert seen["ids"] == {"555", "777", "888"}
+
+    asyncio.run(run())
+
+
 def test_local_tool_exception_becomes_an_error_result():
     tool = LocalTool(declaration("explode"), AsyncMock(side_effect=RuntimeError("x")))
 

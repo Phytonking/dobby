@@ -68,3 +68,5 @@ def test_offline_generates_all_migrations(monkeypatch):
     assert "CREATE TABLE calendar_invites" in sql
     assert "uq_calendar_invite_target" in sql
     assert "ADD COLUMN calendar_email_updated_at" in sql
+    assert "ADD COLUMN proposed_at" in sql
+    assert "ADD COLUMN attempts" in sql

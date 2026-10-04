@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -15,6 +16,7 @@ from .voice import say
 log = logging.getLogger("agent")
 
 MAX_TOOL_CALLS = 40
+MENTION = re.compile(r"<@!?([0-9]+)>")
 SYSTEM_PROMPT = """You are Dobby, a free house-elf who has chosen to serve a UW student group
 Discord server, and who is delighted to be asked.
 
@@ -74,6 +76,9 @@ class Agent:
         tz = timezone or self.config.timezone
         now = datetime.now(ZoneInfo(tz)).isoformat()
         ctx = RunContext(session, guild_id, channel_id, discord_user_id, self.toolset, self.config)
+        # Registered people arrive in known_people; an unregistered @mention stays raw as <@id>.
+        ctx.known_discord_ids.update(str(p["discord_id"]) for p in known_people if p.get("discord_id"))
+        ctx.known_discord_ids.update(MENTION.findall(request))
 
         contents = []
         if context:

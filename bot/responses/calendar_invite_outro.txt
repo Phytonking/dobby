@@ -1,0 +1,21 @@
+# Keep the minutes in step with APPROVAL_SECONDS in bot/integrations/google_calendar/invitations.py.
+Dobby invites no one until you confirm. This question stays open for 15 minutes.
+Nothing is sent until you approve. Dobby waits 15 minutes, then asks again later.
+Dobby will not add the guest without your word. You have 15 minutes to decide.
+No invitation goes out yet, Dobby promises. Confirm within 15 minutes, or Dobby will ask again later.
+Dobby holds the invitation until you confirm, for 15 minutes. After that Dobby may ask again.
+The meeting stays as it is until you approve. This question lasts 15 minutes.
+Dobby sends nothing without your confirmation. Please answer within 15 minutes.
+You decide whether the guest is invited. Dobby waits 15 minutes and then lets the question go.
+Dobby will leave the guest list alone unless you confirm within 15 minutes.
+Nobody is invited until you say so. The question closes in 15 minutes and Dobby may ask again.
+Dobby is patient for 15 minutes. Confirm to invite the guest, or cancel to leave them out.
+Please confirm within 15 minutes if the guest is right. Dobby changes nothing before that.
+The guest list is untouched, Dobby promises. Confirm within 15 minutes to add them.
+Dobby waits 15 minutes for your answer. Without it, no invitation is sent.
+Only you can approve this, and only for the next 15 minutes. Dobby adds no one before then.
+Dobby will invite the guest on your confirmation, given within 15 minutes, and not before.
+Say yes within 15 minutes and Dobby will invite them. Say nothing and Dobby will not.
+The invitation waits for you. Confirm within 15 minutes; Dobby touches nothing until then.
+Dobby has changed nothing. Confirm within 15 minutes to add the guest, or cancel to decline.
+This question closes after 15 minutes. Until you confirm, the meeting stays exactly as it was.

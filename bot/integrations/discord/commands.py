@@ -85,7 +85,7 @@ def register(bot):
             "**You**\n"
             "`/email action:set email:you@uw.edu` → the address Dobby invites you with\n"
             "Or say `@Dobby my name is Leonard and my email is me@example.com`. "
-            "Missing emails never hold up a meeting; approved invitations are added when the address arrives.\n"
+            "Missing emails never hold up a meeting; Dobby asks the requester to approve the invite once it arrives.\n"
             "Mention `@Dobby` in an enabled channel and Dobby will listen, whatever words you "
             "use. Before anything goes to Instagram or LinkedIn, Dobby shows you a preview and "
             "waits for Confirm. Dobby would never post without asking!\n"

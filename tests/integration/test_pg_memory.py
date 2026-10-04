@@ -6,8 +6,9 @@ from datetime import datetime, timedelta, timezone
 import sqlalchemy as sa
 
 from bot.memory import (
+    display_names_for_emails,
     find_user_by_discord_id,
-    find_user_by_name,
+    match_user_by_name,
     record_action,
     save_calendar_email,
     set_calendar_email,
@@ -89,29 +90,54 @@ def test_set_calendar_email_reports_unregistered_and_clears(migrated_db):
     run_db(check)
 
 
-def test_find_user_by_name_matching_rules(migrated_db):
+def test_match_user_by_name_matching_rules(migrated_db):
     def rand():
         return uuid.uuid4().hex[:6]
 
-    zara, omar, ghost = f"Zara{rand()}", f"Omar{rand()}", f"Ghost{rand()}"
+    zara, omar, ghost, maya = f"Zara{rand()}", f"Omar{rand()}", f"Ghost{rand()}", f"Maya{rand()}"
 
     async def check(session):
         await _add_user(session, f"{zara} Quill", f"{zara}@uw.edu")
         await _add_user(session, f"{omar} Alpha", f"{omar}a@uw.edu")
         await _add_user(session, f"{omar} Beta", f"{omar}b@uw.edu")
-        await _add_user(session, f"{ghost} Nomail")  # no email: never a candidate
+        await _add_user(session, f"{ghost} Nomail")  # registered, no email
+        await _add_user(session, f"{maya} Chen", f"{maya}c@uw.edu")
+        await _add_user(session, f"{maya} Ortiz")  # no email, but still makes "Maya" a tie
         await session.commit()
 
-        found = await find_user_by_name(session, f"  {zara.upper()}   quill ")
-        assert found["calendar_email"] == f"{zara}@uw.edu"  # exact, case/space-insensitive
-        assert (await find_user_by_name(session, zara))[
-            "calendar_email"
-        ] == f"{zara}@uw.edu"  # unique first name
-        assert await find_user_by_name(session, omar) is None  # shared first name is ambiguous
-        assert (await find_user_by_name(session, f"{zara} Quil"))[
-            "calendar_email"
-        ] == f"{zara}@uw.edu"  # fuzzy
-        assert await find_user_by_name(session, f"{ghost} Nomail") is None
+        exact = await match_user_by_name(session, f"  {zara.upper()}   quill ")
+        assert exact.user["calendar_email"] == f"{zara}@uw.edu"  # case/space-insensitive
+        assert (await match_user_by_name(session, zara)).user["calendar_email"] == f"{zara}@uw.edu"
+
+        tie = await match_user_by_name(session, omar)  # shared first name: ambiguous, no guess
+        assert tie.user is None and tie.ambiguous and tie.candidates == (f"{omar} Alpha", f"{omar} Beta")
+
+        # Ties are counted over everyone, so the one Maya with an email is not picked for "Maya".
+        hidden_tie = await match_user_by_name(session, maya)
+        assert hidden_tie.user is None and hidden_tie.ambiguous
+
+        # A registered person without an email still matches; the caller decides what that means.
+        nomail = await match_user_by_name(session, f"{ghost} Nomail")
+        assert nomail.user["calendar_email"] is None and nomail.user["discord_id"]
+
+        # A near miss is only ever a suggestion.
+        near = await match_user_by_name(session, f"{zara} Quil")
+        assert near.user is None and not near.ambiguous and near.candidates == (f"{zara} Quill",)
+
+    run_db(check)
+
+
+def test_display_names_for_emails_labels_registered_addresses_only(migrated_db):
+    tag = uuid.uuid4().hex[:8]
+
+    async def check(session):
+        await _add_user(session, f"Maya {tag}", f"Maya{tag}@UW.edu")
+        await session.commit()
+        names = await display_names_for_emails(
+            session, [f"maya{tag}@uw.edu", f"stranger{tag}@example.org", None]
+        )
+        assert names == {f"maya{tag}@uw.edu": f"Maya {tag}"}
+        assert await display_names_for_emails(session, []) == {}
 
     run_db(check)
 

@@ -1,0 +1,20 @@
+Good news, {requester}! Someone Dobby was waiting on has shared an email. Please check the invitation below, if you please.
+{requester}, Dobby has found an address for a guest you asked about! Dobby adds no one until you say so.
+Dobby has news, {requester}! A waiting guest now has a calendar email. Please look it over before Dobby does anything.
+Splendid, {requester}! The email Dobby was waiting for has arrived. Please check who would be invited.
+{requester}, a guest you asked for has registered an email. Dobby asks your approval before inviting them.
+Dobby has a question for you, {requester}. A waiting guest can now be invited. Is this the right person?
+{requester}, the missing email has arrived! Please check the guest and the meeting below.
+Dobby is pleased to report, {requester}, that a waiting guest has an email now. Please approve it, or not, as you see fit.
+Dobby hasn't touched the meeting, {requester}! A guest you asked about has an address now. Please check it first.
+Good tidings, {requester}! Dobby found the email of someone you wanted invited. Please confirm it is the right one.
+{requester}, a guest's email has turned up. Dobby would like your approval before sending any invitation.
+Dobby asks for a moment of your time, {requester}. A waiting invitation is ready, if you approve.
+Hello again, {requester}! Dobby has an address for a guest you were waiting on. Please review it below.
+{requester}, Dobby waited, and the email has come! Please make sure it belongs to the person you meant.
+Dobby has something to check with you, {requester}. A guest now has an email, and Dobby invites no one unasked.
+Wonderful news, {requester}! A waiting guest has shared their address. Dobby needs your word before inviting them.
+{requester}, one of your guests is ready to be invited. Please look at the address Dobby found.
+Dobby has found what it was waiting for, {requester}: an email for your guest. Please approve it below, if you please.
+Please take a look, {requester}! A guest you asked about has an address, and Dobby will wait for your decision.
+{requester}, Dobby is holding an invitation until you approve. The guest's email has arrived; see below.
