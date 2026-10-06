@@ -287,6 +287,24 @@ def test_invite_approval_is_a_new_message_that_pings_only_the_requester_and_wait
     asyncio.run(run())
 
 
+def test_an_unanswered_invite_approval_says_how_long_it_waited_and_that_it_will_ask_again():
+    async def run():
+        bot, message, action, entry = setup()
+        channel = Mock()
+        channel.send = AsyncMock(return_value=message)
+        await present_invite_approval(bot, channel, [action], 7, 900)
+        armed = bot.calendar_confirmations[message.id]
+        armed.task.cancel()
+        armed.timeout = 0
+        await armed.expire()
+        content = message.edit.await_args.kwargs["content"]
+        assert "15 minutes" in content and "again" in content
+        assert "2 minutes" not in content
+        action.execute.assert_not_awaited()
+
+    asyncio.run(run())
+
+
 def test_long_invite_approvals_split_and_ping_once():
     async def run():
         bot, message, action, entry = setup()

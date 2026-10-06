@@ -36,6 +36,9 @@ FALLBACK = {
         "Please check the invitation below, if you please."
     ),
     "calendar_invite_outro": "Dobby invites no one until you confirm. This question stays open for 15 minutes.",
+    "calendar_invite_expired": (
+        "Dobby waited 15 minutes and heard nothing, so no one was invited. Dobby will ask again later."
+    ),
     "calendar_preview_outro": "Dobby will wait for your confirmation before changing anything. Confirm within 2 minutes. Times include their UTC offset.",
     "calendar_preview_intro": "Dobby has prepared a meeting proposal! Please check the details, if you please.",
     "working": "Dobby is on it! Dobby will reply here shortly…",

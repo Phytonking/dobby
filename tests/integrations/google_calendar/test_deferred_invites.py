@@ -335,6 +335,30 @@ def test_a_prompt_that_lost_its_message_comes_back_after_the_cooldown():
     asyncio.run(run())
 
 
+def test_a_slow_calendar_does_not_make_a_live_prompt_look_stale():
+    async def run():
+        async with database() as factory:
+            client = bot()
+            await confirm_event(await draft(factory, client))
+            await save(factory)
+
+            async def slow(toolset, name, params, entity):
+                factory.clock.advance(timedelta(minutes=5))  # a slow provider, before the prompt is posted
+                return GOT
+
+            asked, _ = await reconcile(client, respond=slow)
+            assert asked == 1
+            action = prompts(client)[-1][2][0]
+            # Still inside the prompt's own window, counted from when it was posted.
+            factory.clock.advance(timedelta(seconds=APPROVAL_SECONDS - 60))
+            await reconcile(client)
+            assert await statuses(factory) == ["proposed"]
+            result, _ = await approve(client, action, GOT, {"success": True})
+            assert result["success"] and await statuses(factory) == ["completed"]
+
+    asyncio.run(run())
+
+
 def test_the_approval_window_outlasts_the_response_text():
     assert APPROVAL_SECONDS == 15 * 60
     assert STALE_AFTER > timedelta(seconds=APPROVAL_SECONDS)

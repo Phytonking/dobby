@@ -1,0 +1,21 @@
+# Keep the minutes in step with APPROVAL_SECONDS in bot/integrations/google_calendar/invitations.py.
+Dobby waited 15 minutes and heard nothing, so no one was invited. Dobby will ask again later.
+This question closed after 15 minutes. The guest list is unchanged; Dobby will ask again later.
+Dobby gave up waiting after 15 minutes. Nobody was invited, and Dobby will ask again another time.
+No answer in 15 minutes, so Dobby invited no one. Dobby will bring this up again later.
+Dobby's 15 minutes of patience ran out. The meeting is untouched, and Dobby will ask again.
+The approval window closed after 15 minutes. Nothing changed; Dobby will check with you later.
+Dobby heard nothing for 15 minutes and left the guest list alone. Dobby will ask again later.
+Fifteen minutes passed without a reply, so no invitation went out. Dobby will try again later.
+Dobby stopped waiting after 15 minutes. No guest was added; Dobby will ask once more later.
+This invitation question expired after 15 minutes. Dobby changed nothing and will ask again.
+Dobby waited 15 minutes, if you please, and invited nobody. Dobby will return to this later.
+No reply came within 15 minutes, so the meeting stays as it was. Dobby will ask again later.
+The 15 minutes are up and no one was invited. Dobby will raise this again another time.
+Dobby has let this question go after 15 minutes. Nothing was sent; Dobby will ask again later.
+Dobby kept the invitation for 15 minutes and heard nothing. No guest was added; Dobby will ask again.
+After 15 quiet minutes Dobby closed this question. The guest list is untouched for now.
+Dobby invited no one, having waited 15 minutes without an answer. Dobby will ask again later.
+This approval timed out after 15 minutes. Dobby made no change and will check back later.
+Fifteen minutes went by with no answer, so Dobby left the meeting alone. Dobby will ask again.
+Dobby waited the full 15 minutes. No invitation was sent, and Dobby will ask you again later.

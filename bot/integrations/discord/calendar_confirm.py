@@ -16,10 +16,21 @@ CONFIRM, CANCEL = "🟢", "🔴"
 
 
 class CalendarConfirmation:
-    def __init__(self, bot, message, pending, requester_id, *, mention, timeout=TIMEOUT_SECONDS):
+    def __init__(
+        self,
+        bot,
+        message,
+        pending,
+        requester_id,
+        *,
+        mention,
+        timeout=TIMEOUT_SECONDS,
+        expired="confirm_expired",
+    ):
         self.bot, self.message, self.pending = bot, message, pending
         self.requester_id, self.mention = requester_id, mention
         self.timeout = timeout
+        self.expired = expired  # response key shown when nobody answers in time
         self.expires = time.monotonic() + timeout
         self.claimed = False
         self.task = None
@@ -41,7 +52,7 @@ class CalendarConfirmation:
         if not self.claimed:
             self.claimed = True
             await self.release("expired")
-            await self.finish(say("confirm_expired"))
+            await self.finish(say(self.expired))
 
     async def release(self, outcome):
         """Tell each action it will not run, so anything it reserved can be given back."""
@@ -169,5 +180,7 @@ async def present_invite_approval(bot, channel, pending, requester_id, timeout):
     message = await channel.send(chunks[0], allowed_mentions=ping)
     for chunk in chunks[1:]:
         message = await channel.send(chunk)
-    confirmation = CalendarConfirmation(bot, message, pending, requester_id, mention=False, timeout=timeout)
+    confirmation = CalendarConfirmation(
+        bot, message, pending, requester_id, mention=False, timeout=timeout, expired="calendar_invite_expired"
+    )
     await confirmation.arm()

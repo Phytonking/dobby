@@ -328,7 +328,9 @@ async def propose(bot, row, person, now):
     if person["calendar_email"].lower() in fmt.emails(event):
         await settle(row["id"], "completed", "pending")
         return None
-    if not await claim(row["id"], now):
+    # Stamp the claim with the current time, not the batch's: the prompt opens only after every
+    # row's event loads, and the stale sweep times the prompt from proposed_at.
+    if not await claim(row["id"], utcnow()):
         return None
     return approval_action(bot, row, person, event)
 
