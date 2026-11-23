@@ -34,6 +34,7 @@ for line in (ROOT / "test_regression" / "ci.env").read_text().splitlines():
         ENV[key] = value
 for key in (
     "INSTAGRAM_USER_ID",
+    "INSTAGRAM_DM_CHANNEL_ID",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "DISCORD_CLIENT_ID",

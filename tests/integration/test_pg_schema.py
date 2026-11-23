@@ -11,6 +11,7 @@ EXPECTED_TABLES = {
     "integrations",
     "agent_actions",
     "calendar_invites",
+    "instagram_dm_threads",
 }
 # Folded into users or dropped by 002; nothing may still depend on them.
 DROPPED_TABLES = {"conversation_history", "user_facts", "guild_settings", "contacts"}
@@ -53,7 +54,7 @@ def test_dashboard_models_match_migrated_schema(migrated_db):
     run_db(check)
 
     # The bot writes these with raw SQL and has no ORM model; alembic_version is alembic's own.
-    bot_owned = {"calendar_invites", "alembic_version"}
+    bot_owned = {"calendar_invites", "instagram_dm_threads", "alembic_version"}
     bot_owned_columns = {("users", "calendar_email_updated_at")}
 
     # Runtime breakage only: tables/columns one side lacks, or a type mismatch. Nullability,

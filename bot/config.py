@@ -34,6 +34,10 @@ class Config:
     ai_settings: ModelSettings | None = None
     # The agent loop's only backstop against a model that keeps calling tools.
     max_tool_calls: int = 40
+    # Channel where Dobby opens a thread per incoming Instagram DM; 0 turns the relay off.
+    instagram_dm_channel: int = 0
+    # How often the relay asks Instagram for new DMs.
+    instagram_dm_poll_seconds: int = 60
 
     @classmethod
     def load(cls):
@@ -71,6 +75,20 @@ class Config:
             max_tool_calls = 0
         if not 1 <= max_tool_calls <= 500:
             raise ConfigError("MAX_TOOL_CALLS must be a whole number from 1 to 500.")
+        try:
+            dm_channel = int(os.getenv("INSTAGRAM_DM_CHANNEL_ID", "").strip() or 0)
+        except ValueError:
+            raise ConfigError("INSTAGRAM_DM_CHANNEL_ID must be a numeric Discord channel ID.") from None
+        try:
+            dm_poll = int(os.getenv("INSTAGRAM_DM_POLL_SECONDS", "").strip() or 60)
+        except ValueError:
+            dm_poll = 0
+        if not 15 <= dm_poll <= 3600:
+            raise ConfigError("INSTAGRAM_DM_POLL_SECONDS must be a whole number from 15 to 3600.")
+        instagram_user_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
+        if dm_channel and not instagram_user_id:
+            # Without our own account ID the relay cannot tell our replies from theirs.
+            raise ConfigError("INSTAGRAM_DM_CHANNEL_ID needs INSTAGRAM_USER_ID to be set as well.")
         ai_settings = ModelSettings.from_env()
         return cls(
             os.environ["DISCORD_TOKEN"],
@@ -85,11 +103,13 @@ class Config:
             mentions,
             os.getenv("COMPOSIO_ENTITY_ID", "dobby").strip() or "dobby",
             context_limit,
-            os.getenv("INSTAGRAM_USER_ID", "").strip(),
+            instagram_user_id,
             os.getenv("NOTION_PARENT_PAGE_ID", "").strip(),
             ai_settings.backup.model if ai_settings.backup else "",
             ai_settings,
             max_tool_calls,
+            dm_channel,
+            dm_poll,
         )
 
     def mentionable(self, channel):
