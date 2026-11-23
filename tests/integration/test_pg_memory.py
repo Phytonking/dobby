@@ -121,8 +121,10 @@ def test_match_user_by_name_matching_rules(migrated_db):
         assert nomail.user["calendar_email"] is None and nomail.user["discord_id"]
 
         # A near miss is only ever a suggestion.
+        # Other tests share this database and use random names too, so a look-alike from them may
+        # also be suggested; what matters is that ours is, and nobody is picked.
         near = await match_user_by_name(session, f"{zara} Quil")
-        assert near.user is None and not near.ambiguous and near.candidates == (f"{zara} Quill",)
+        assert near.user is None and not near.ambiguous and f"{zara} Quill" in near.candidates
 
     run_db(check)
 
