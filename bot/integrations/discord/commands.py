@@ -93,4 +93,15 @@ def register(bot):
             "context and stores none of them. Your request and that context go to this server's "
             "configured AI model. Ask an admin where it runs and which data policy applies."
         )
-        await interaction.edit_original_response(content="\n\n".join(sections)[:2000])
+        # More integrations than one Discord message holds: pack whole sections into messages
+        # under the 2000-character limit instead of cutting the last ones off.
+        messages = [""]
+        for section in sections:
+            joined = f"{messages[-1]}\n\n{section}" if messages[-1] else section
+            if len(joined) <= 2000:
+                messages[-1] = joined
+            else:
+                messages.append(section[:2000])
+        await interaction.edit_original_response(content=messages[0])
+        for extra in messages[1:]:
+            await interaction.followup.send(extra)

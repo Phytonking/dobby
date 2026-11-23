@@ -7,3 +7,5 @@
 aiosqlite>=0.20.0
 # Behaviour specs (Gherkin .feature files) for the dashboard and bot.
 pytest-bdd>=8.1
+# A real MCP server (official SDK) plays Luma in tests/test_luma_mcp_bdd.py; the bot speaks MCP with httpx.
+mcp>=2.3,<3

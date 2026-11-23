@@ -77,6 +77,12 @@ settings and the audit log, and the admin-only Composio connections for Dobby's 
 | GET | `/integrations/{provider}/connect` | admin | Start a Composio connection for `COMPOSIO_ENTITY_ID` and redirect to it; 503 if no API key |
 | GET | `/integrations/{provider}/callback` | admin | Upsert the provider's `integrations` row (`connected_by` = admin), then redirect to `/dashboard/integrations` |
 | DELETE | `/integrations/{provider}` | admin | Remove the local integration row; 204 (it does not revoke the connection in Composio) |
+| **luma** (`routers/luma.py`, mounted before the Composio router) | | | |
+| GET | `/integrations/luma/client.json` | none | Dobby's OAuth Client ID Metadata Document. Luma fetches it, so it must be public HTTPS; `LUMA_CLIENT_ID` points elsewhere if this API isn't public |
+| GET | `/integrations/luma/status` | admin | Whether Luma is connected, plus the client ID and callback URL in use |
+| GET | `/integrations/luma/connect` | admin | Discover Luma's authorization server from `mcp.luma.com`'s protected-resource metadata; redirect to consent with PKCE (S256), `state` and `resource` |
+| GET | `/integrations/luma/callback` | admin | Check `state` and `iss`, exchange the code with the PKCE verifier, store tokens in `luma_connection` |
+| DELETE | `/integrations/luma` | admin | Revoke the refresh and access tokens at Luma (best effort), delete the row |
 
 Supported providers are `google_calendar`, `notion`, `instagram` and `linkedin` (one folder each under `bot/integrations/`). Admin and integration handlers log unexpected DB or Composio errors and return a generic 500 or 502.
 

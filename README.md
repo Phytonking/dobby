@@ -303,6 +303,7 @@ Then, in a browser:
 1. Open `DASHBOARD_URL` (default <http://localhost:3000>) and sign in with your local admin username/password or a pre-registered OAuth admin account, depending on `AUTH_MODE`.
 2. **Users:** add teammates — display name, Google email, their Discord user ID (so `@mentions` and `/email` work) and their calendar email. Anyone can later change their own calendar email on the dashboard home page or with `/email` in Discord.
 3. **Service accounts** (admin only): press **Connect** for Google Calendar, Notion, Instagram and LinkedIn. Each opens Composio's OAuth flow for that service under the `dobby` entity; approve it with the group's account and you land back on the page with a **Connected** badge.
+   **Luma** is connected differently: its card signs in to Luma's own MCP server (`mcp.luma.com`). Use the Luma account that manages the group's calendar. No API key or Luma Plus is needed. Luma fetches Dobby's OAuth client document from `API_URL/integrations/luma/client.json`, so `API_URL` must be a public HTTPS address. If it isn't (a LAN-only install), copy that JSON to any public HTTPS host and set `LUMA_CLIENT_ID` to its URL.
 4. In Discord, try `/help`, then `/events` — Dobby lists the connected calendar's upcoming events.
 
 Run **one bot instance per Discord token**. Stop the Windows copy with `docker compose down` before starting a Pi copy.
@@ -338,6 +339,10 @@ Meetings default to one hour in `TEAM_TIMEZONE`. Dobby matches a typed name agai
 ```
 
 Every one of these shows the exact text/image first with **Confirm** and **Cancel** buttons. Only the requester can press them, they expire after two minutes, and nothing is published until Confirm. Images must be public `https` URLs. A story "featuring" a post re-publishes that post's photo or video; Instagram's API cannot attach the tappable share sticker, and carousel posts cannot be reused.
+
+### Luma
+
+Ask in plain words: "what Luma events do we have next month?", "who's registered for Demo Night?", "invite sam@example.com to Demo Night". `/luma events` and `/luma guests event:…` are shortcuts. Dobby uses whatever Luma's MCP server offers. Reads are answered directly; anything that changes Luma (creating or editing events, inviting, approving or declining guests, blasts) shows the exact request with Confirm/Cancel first. Luma's MCP server cannot cancel events or issue refunds; do those on luma.com.
 
 ### Instagram DMs
 
@@ -430,6 +435,7 @@ The deployment records package publication; it does not restart anyone's running
 
 - Credentials belong in local `.env`, which Git and Docker builds ignore. Only `.env.example` is tracked. Compose passes values to containers as environment variables; nothing is baked into images.
 - Service tokens (Google, Notion, Meta, LinkedIn) live in **Composio**, under your Composio account, not on this machine. Rotating `COMPOSIO_API_KEY` or disconnecting a service in Composio cuts Dobby off immediately.
+- **Luma is the exception:** it isn't on Composio, so Dobby's Luma OAuth tokens are stored in Postgres (`luma_connection`), and the bot refreshes them. Disconnecting Luma on the dashboard revokes them at Luma and deletes the row. You can also revoke Dobby's access from Luma's account settings.
 - The Postgres volume (`pgdata`) holds teammates' emails and dashboard sessions; treat database backups like `.env`. No message content is ever stored.
 - On Pi keep `.env` at mode `600`, owned by the configured UID/GID. On Windows restrict the folder to your account. Compose secrets are not encrypted at rest; host root and Docker administrators can read them.
 - Anyone with the allowed role can act on all connected services *through Dobby's accounts*: create calendar events, write Notion pages, and — after their own Confirm — publish to the group's Instagram and LinkedIn. Restrict who gets the role.

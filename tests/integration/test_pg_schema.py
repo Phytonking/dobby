@@ -12,6 +12,7 @@ EXPECTED_TABLES = {
     "agent_actions",
     "calendar_invites",
     "instagram_dm_threads",
+    "luma_connection",
 }
 # Folded into users or dropped by 002; nothing may still depend on them.
 DROPPED_TABLES = {"conversation_history", "user_facts", "guild_settings", "contacts"}

@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .auth import get_current_user
 from .database import engine, get_db
-from .routers import auth, admin, integrations
+from .routers import auth, admin, integrations, luma
 from .schemas import MeUpdate, UserOut
 from .seed import seed_bootstrap_admin
 from .login_config import auth_mode, client_host, dashboard_urls, is_local_request
@@ -55,6 +55,8 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+# Before the Composio router, whose /{provider}/... routes would otherwise capture /luma/...
+app.include_router(luma.router, prefix="/integrations/luma", tags=["integrations"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 
 

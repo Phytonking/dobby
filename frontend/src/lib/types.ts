@@ -66,3 +66,11 @@ export interface HealthReport {
   services: ServiceHealth[]
   hourly: { hour: string; ok: number; failed: number }[]
 }
+
+export interface LumaStatus {
+  connected: boolean
+  connected_at: string | null
+  connected_by: string | null
+  client_id: string
+  callback_url: string
+}

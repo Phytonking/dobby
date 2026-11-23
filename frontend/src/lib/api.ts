@@ -1,4 +1,4 @@
-import type { User, Integration, AuditEntry, Paginated, ImportResult, HealthReport } from './types'
+import type { LumaStatus, User, Integration, AuditEntry, Paginated, ImportResult, HealthReport } from './types'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -57,6 +57,12 @@ export const api = {
     list: () => request<Integration[]>('/integrations'),
     connectUrl: (provider: string) => `${API}/integrations/${provider}/connect`,
     disconnect: (provider: string) => request<void>(`/integrations/${provider}`, { method: 'DELETE' }),
+    // Luma isn't on Composio: Dobby signs in to Luma's MCP server itself.
+    luma: {
+      status: () => request<LumaStatus>('/integrations/luma/status'),
+      connectUrl: () => `${API}/integrations/luma/connect`,
+      disconnect: () => request<void>('/integrations/luma', { method: 'DELETE' }),
+    },
   },
 
   admin: {

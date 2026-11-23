@@ -43,7 +43,9 @@ The root `Dockerfile` has stages `base` (dependencies + `bot/`), `migrate`, `tes
 | `bot/memory.py` | Postgres: users by Discord ID/name, calendar emails, `agent_actions` metadata rows |
 | `bot/integrations/base.py` | `Integration`, `LocalTool`, `PendingAction`, `RunContext` |
 | `bot/integrations/discord/` | The transport: client (gating, cooldown, mentions), live channel context, `/email` + `/help`, the Confirm/Cancel view |
-| `bot/integrations/google_calendar/`, `notion/`, `instagram/`, `linkedin/` | One folder per service: Composio actions the model may call, local tools, slash commands, prompt guidance, publish helpers |
+| `bot/integrations/google_calendar/`, `notion/`, `instagram/`, `linkedin/`, `google_drive/` | One folder per service: Composio actions the model may call, local tools, slash commands, prompt guidance, publish helpers |
+| `bot/integrations/luma/` | Luma through Luma's MCP server (not Composio): a small Streamable-HTTP MCP client, OAuth token refresh, and `luma_tools`/`luma_call` (changes confirm-gated) |
+| `dashboard/routers/luma.py` | Luma OAuth (PKCE, client metadata document, refresh tokens) into `luma_connection` |
 | `bot/integrations/instagram/dms.py`, `relay.py` | Optional Instagram DM relay: a poller opens a Discord thread per conversation; `/dm reply` (Confirm-gated) answers and closes it, `/dm close` closes it |
 | `bot/voice.py`, `bot/responses/` | Dobby's phrasings, 20 per situation |
 | `dashboard/` | Login (Google/Discord OAuth and/or local LAN accounts), user roster and calendar emails, admin-only service-account connections, audit log |

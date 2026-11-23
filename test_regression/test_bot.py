@@ -67,6 +67,7 @@ def interaction(user=1, guild=10, channel=40, roles=()):
         channel_id=channel,
         response=SimpleNamespace(send_message=AsyncMock(), edit_message=AsyncMock(), defer=AsyncMock()),
         edit_original_response=AsyncMock(),
+        followup=SimpleNamespace(send=AsyncMock()),  # /help continues in follow-ups when long
     )
 
 
@@ -284,6 +285,8 @@ async def test_21_bot_command_registration_and_sync():
         "notion",
         "instagram",
         "linkedin",
+        "drive",
+        "luma",
     }
     assert len(commands) == len({c.name for c in commands})
     await bot.close()

@@ -61,6 +61,9 @@ unknown names with a warning), adds the local tools, and joins the prompts.
 | `instagram` | none | `list_instagram_posts`, `draft_instagram_post`, `draft_instagram_story`, `draft_instagram_dm_reply` | `/instagram posts`, `post`, `story`; `/dm reply`, `/dm close` | **yes** |
 | `linkedin` | none | `draft_linkedin_post` | `/linkedin post` | **yes** |
 | `google_drive` | find file, get metadata, create folder, move; Docs search, read, create, update | `trash_drive_file`, `share_drive_file` | `/drive search`, `/drive read` | trash and share only |
+| `luma` | none (not on Composio) | `luma_tools` (Luma's MCP catalog), `luma_call` (runs one Luma MCP tool) | `/luma events`, `/luma guests` | every tool Luma doesn't mark `readOnlyHint` |
+
+**Luma** goes through Luma's official MCP server (`https://mcp.luma.com`) instead of Composio. `luma/mcp.py` speaks MCP's Streamable HTTP transport (JSON-RPC: `initialize`, `tools/list`, `tools/call`; JSON or SSE replies) with httpx, and reads the OAuth tokens an admin stored through the dashboard from `luma_connection` (migration 007). It refreshes them a minute before expiry under `SELECT … FOR UPDATE`, because Luma rotates refresh tokens, and retries a call once after a 401. Read-only tools run directly. Any other tool becomes a `PendingAction` whose preview is the exact JSON arguments, and those arguments run on Confirm. The catalog is cached for ten minutes.
 
 Publishing integrations expose no direct Composio actions: the model can only *draft*, and the Graph
 API / LinkedIn calls run inside `PendingAction.execute()` after Confirm.

@@ -77,7 +77,6 @@ services:
       INSTAGRAM_DM_CHANNEL_ID: ${INSTAGRAM_DM_CHANNEL_ID:-}
       INSTAGRAM_DM_POLL_SECONDS: ${INSTAGRAM_DM_POLL_SECONDS:-60}
       NOTION_PARENT_PAGE_ID: ${NOTION_PARENT_PAGE_ID:-}
-      LUMA_API_KEY: ${LUMA_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       GEMINI_MODEL_BACKUP: ${GEMINI_MODEL_BACKUP-gemini-3.1-flash-lite}
       TEAM_TIMEZONE: ${TEAM_TIMEZONE:-America/Los_Angeles}
@@ -116,6 +115,10 @@ services:
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:?}
       COMPOSIO_ENTITY_ID: ${COMPOSIO_ENTITY_ID:-dobby}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3000}
+      # Public API address: the Luma OAuth callback and client metadata URL are built from it.
+      API_URL: ${API_URL:-http://localhost:8000}
+      # Optional: URL of a public copy of /integrations/luma/client.json when this API isn't public.
+      LUMA_CLIENT_ID: ${LUMA_CLIENT_ID:-}
       LOCAL_MODE: ${LOCAL_MODE:-false}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
     depends_on:

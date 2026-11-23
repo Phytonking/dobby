@@ -1,19 +1,22 @@
-"""Luma (lu.ma): events and guest lists, read directly; invites behind Confirm."""
+"""Luma (luma.com) through Luma's official MCP server: reads run directly; every change waits for Confirm."""
 
 from ..base import Integration
 from . import commands
 from .tools import TOOLS
 
 PROMPT = (
-    "Luma: use list_luma_events to find an event ID before get_luma_event or list_luma_guests. "
-    "To invite people, call draft_luma_invites; it is shown to the requester for confirmation and "
-    "you cannot send invites directly. Only invite email addresses the user supplied."
+    "Luma (events, guest lists, invites, calendars) is reached through Luma's MCP server: call "
+    "luma_tools to see what it offers, then luma_call with a tool name and JSON arguments. Find IDs "
+    "with read tools before using them. Changes (creating or editing events, inviting, approving or "
+    "declining guests, blasts) are shown to the requester for Confirm — say so instead of claiming "
+    "they're done. Only invite email addresses the user gave you. If Luma isn't connected, say an "
+    "admin can connect it on the dashboard."
 )
 
 INTEGRATION = Integration(
     key="luma",
     label="Luma",
-    app="luma",  # not a Composio toolkit: calls Luma's public API with LUMA_API_KEY
+    app="luma",  # not a Composio toolkit: Luma's MCP server, OAuth connected on the dashboard
     local_tools=TOOLS,
     prompt=PROMPT,
     register_commands=commands.register,

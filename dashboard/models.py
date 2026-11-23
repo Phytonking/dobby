@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     ForeignKey,
     Integer,
+    SmallInteger,
     Text,
     text,
 )
@@ -98,3 +99,23 @@ class AgentAction(Base):
         TIMESTAMPTZ, server_default=text("now()")
     )
 
+
+
+class LumaConnection(Base):
+    """Dobby's single Luma MCP connection (Luma isn't on Composio, so Dobby holds the tokens)."""
+
+    __tablename__ = "luma_connection"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
+    client_id: Mapped[str] = mapped_column(Text, nullable=False)
+    token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    revocation_endpoint: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resource: Mapped[str] = mapped_column(Text, nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, nullable=True)
+    connected_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    connected_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, server_default=text("now()"))
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, server_default=text("now()"))

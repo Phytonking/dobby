@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Calendar, BookOpen, FolderOpen, FileText, Instagram, Linkedin } from 'lucide-react'
+import { Calendar, BookOpen, FolderOpen, FileText, Instagram, Linkedin, Ticket } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -62,7 +62,7 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ]
 
-const LABELS = new Map(PROVIDERS.map((p) => [p.key, p.label]))
+const LABELS = new Map([...PROVIDERS.map((p): [string, string] => [p.key, p.label]), ['luma', 'Luma']])
 
 // Only known provider keys render, so a crafted ?error= link can't inject text.
 function readCallbackNotice(): Notice | null {
@@ -160,6 +160,76 @@ function IntegrationCard({
   )
 }
 
+// Luma has no Composio toolkit: Dobby connects to Luma's own MCP server (mcp.luma.com) with OAuth.
+function LumaCard({ onNotice }: { onNotice: (notice: Notice) => void }) {
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError } = useQuery({ queryKey: ['luma'], queryFn: api.integrations.luma.status })
+  const disconnect = useMutation({
+    mutationFn: api.integrations.luma.disconnect,
+    onSuccess: () => onNotice({ kind: 'success', text: 'Luma disconnected. Dobby no longer has access.' }),
+    onError: (err) => onNotice({ kind: 'error', text: `Couldn't disconnect Luma: ${err.message}` }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['luma'] }),
+  })
+
+  if (isLoading) return <Skeleton className="h-48" />
+  const connected = !!data?.connected
+
+  return (
+    <Card data-testid="luma-card">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <Ticket className="h-6 w-6 text-orange-500" />
+            <CardTitle className="text-base">Luma</CardTitle>
+          </div>
+          <Badge variant={isError ? 'error' : connected ? 'success' : 'secondary'}>
+            {isError ? 'Unknown' : connected ? 'Connected' : 'Disconnected'}
+          </Badge>
+        </div>
+        <CardDescription className="mt-2">
+          Events, guest lists and invites through Luma&apos;s MCP server. Dobby reads freely; every change
+          (new events, invites, approvals, blasts) is confirmed in Discord first.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {connected ? (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {data?.connected_at
+                ? `Since ${new Date(data.connected_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`
+                : 'Connected'}
+            </p>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={disconnect.isPending}
+              onClick={() => {
+                if (window.confirm('Disconnect Luma for everyone? Dobby loses access until an admin reconnects it.')) {
+                  disconnect.mutate()
+                }
+              }}
+            >
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Button asChild size="sm" variant="secondary">
+              <a href={api.integrations.luma.connectUrl()}>Connect</a>
+            </Button>
+            {data && !data.client_id.startsWith('https://') && (
+              <p className="text-xs text-amber-700">
+                Luma must be able to fetch {data.client_id} over public HTTPS. Set API_URL to a public HTTPS
+                address, or host that JSON elsewhere and set LUMA_CLIENT_ID.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function IntegrationsPage() {
   const queryClient = useQueryClient()
   const [notice, setNotice] = useState<Notice | null>(null)
@@ -250,6 +320,7 @@ export default function IntegrationsPage() {
               }
             />
           ))}
+          <LumaCard onNotice={setNotice} />
         </div>
       )}
     </div>

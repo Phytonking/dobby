@@ -20,6 +20,7 @@ def make_interaction(user_id=1):
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
     interaction.edit_original_response = AsyncMock()
+    interaction.followup.send = AsyncMock()
     return interaction
 
 
@@ -105,10 +106,12 @@ def test_help_lists_every_integration():
         bot = make_bot()
         interaction = make_interaction()
         await bot.tree.get_command("help").callback(interaction)
-        text = interaction.edit_original_response.await_args.kwargs["content"]
-        for label in ("Google Calendar", "Notion", "Instagram", "LinkedIn"):
+        parts = [interaction.edit_original_response.await_args.kwargs["content"]]
+        parts += [c.args[0] for c in interaction.followup.send.await_args_list]
+        assert all(len(part) <= 2000 for part in parts)
+        text = "\n\n".join(parts)
+        for label in ("Google Calendar", "Notion", "Instagram", "LinkedIn", "Luma"):
             assert f"**{label}**" in text
         assert "/email" in text and "last 50 messages" in text
-        assert len(text) <= 2000
 
     asyncio.run(run())
