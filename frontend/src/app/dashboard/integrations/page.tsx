@@ -87,7 +87,14 @@ function IntegrationCard({
   onDisconnect: (key: string) => void
   isDisconnecting: boolean
 }) {
-  const isConnected = !!integration
+  const status = integration?.status ?? 'disconnected'
+  const isConnected = status === 'connected'
+  const badge = {
+    connected: { variant: 'success' as const, text: 'Connected' },
+    pending: { variant: 'secondary' as const, text: 'Finishing sign-in' },
+    needs_reconnect: { variant: 'destructive' as const, text: 'Needs reconnect' },
+    disconnected: { variant: 'secondary' as const, text: 'Disconnected' },
+  }[status]
 
   return (
     <Card>
@@ -99,22 +106,26 @@ function IntegrationCard({
               <CardTitle className="text-base">{provider.label}</CardTitle>
             </div>
           </div>
-          <Badge variant={isConnected ? 'success' : 'secondary'}>
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </Badge>
+          <Badge variant={badge.variant}>{badge.text}</Badge>
         </div>
         <CardDescription className="mt-2">{provider.description}</CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
+        {status === 'needs_reconnect' && (
+          <p className="mb-3 text-xs text-red-400">
+            Composio has this account but it&apos;s expired or failed — Dobby can&apos;t use it. Reconnect it.
+          </p>
+        )}
         {isConnected ? (
           <div className="flex items-center justify-between">
             <p className="text-xs text-zinc-400">
-              Since{' '}
-              {new Date(integration.connected_at).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
+              {integration?.connected_at
+                ? `Since ${new Date(integration.connected_at).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}`
+                : 'Connected'}
             </p>
             <Button
               variant="destructive"
@@ -127,7 +138,9 @@ function IntegrationCard({
           </div>
         ) : (
           <Button asChild size="sm" variant="secondary">
-            <a href={api.integrations.connectUrl(provider.key)}>Connect</a>
+            <a href={api.integrations.connectUrl(provider.key)}>
+              {status === 'disconnected' ? 'Connect' : 'Reconnect'}
+            </a>
           </Button>
         )}
       </CardContent>
@@ -188,6 +201,14 @@ export default function IntegrationsPage() {
       </div>
 
       {notice && <NoticeBanner notice={notice} />}
+      {integrations && integrations.length > 0 && !integrations[0].verified && (
+        <NoticeBanner
+          notice={{
+            kind: 'error',
+            text: "Couldn't check with Composio (unreachable or not configured), so this shows the dashboard's last known state. It may be out of date.",
+          }}
+        />
+      )}
 
       {me && !isAdmin ? (
         <Card>

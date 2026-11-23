@@ -21,13 +21,17 @@ function CalendarEmailCard() {
 
   const mutation = useMutation({
     mutationFn: (calendar_email: string | null) => api.updateMe({ calendar_email }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me'] }),
+    onSuccess: (updated) => {
+      // Show the stored (normalised) address straight away instead of waiting for a refetch.
+      queryClient.setQueryData(['me'], updated)
+      setValue(updated.calendar_email ?? '')
+    },
   })
 
   if (isLoading) return <Skeleton className="h-44 w-full" />
 
   const saved = user?.calendar_email ?? ''
-  const dirty = value.trim() !== saved
+  const dirty = value.trim().toLowerCase() !== saved
 
   return (
     <Card>
@@ -64,7 +68,12 @@ function CalendarEmailCard() {
           </Button>
         </form>
         {mutation.isError && (
-          <p className="mt-2 text-sm text-red-400">{(mutation.error as Error).message}</p>
+          <p role="alert" className="mt-2 text-sm text-red-400">{(mutation.error as Error).message}</p>
+        )}
+        {mutation.isSuccess && !dirty && (
+          <p role="status" className="mt-2 text-sm text-emerald-400">
+            {saved ? `Saved. Dobby will invite ${saved}.` : 'Removed.'}
+          </p>
         )}
         {!saved && !mutation.isPending && (
           <p className="mt-2 text-xs text-zinc-500">

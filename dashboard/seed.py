@@ -1,7 +1,7 @@
 import logging
 import os
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .database import SessionLocal
 from .models import User
@@ -16,7 +16,7 @@ async def seed_bootstrap_admin() -> None:
         logger.info("BOOTSTRAP_ADMIN_EMAIL not set — skipping admin seed")
         return
 
-    bootstrap_email = bootstrap_email.strip()
+    bootstrap_email = bootstrap_email.strip().lower()
     if not bootstrap_email:
         return
 
@@ -31,7 +31,7 @@ async def seed_bootstrap_admin() -> None:
             return
 
         result = await db.execute(
-            select(User).where(User.uw_email == bootstrap_email)
+            select(User).where(func.lower(User.uw_email) == bootstrap_email)
         )
         admin = result.scalar_one_or_none()
         if admin is None:

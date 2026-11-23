@@ -5,3 +5,5 @@
 -r dashboard/requirements.txt
 # dashboard/tests use an in-memory SQLite database.
 aiosqlite>=0.20.0
+# Behaviour specs (Gherkin .feature files) for the dashboard and bot.
+pytest-bdd>=8.1

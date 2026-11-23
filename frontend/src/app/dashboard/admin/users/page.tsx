@@ -60,7 +60,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
     mutationFn: () =>
       api.admin.users.create({
         display_name: form.display_name,
-        uw_email: form.uw_email,
+        uw_email: form.uw_email.trim() || undefined,
         discord_id: form.discord_id || undefined,
         calendar_email: form.calendar_email || undefined,
         role: form.role,
@@ -84,7 +84,8 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
         <DialogHeader>
           <DialogTitle>Add user to allowlist</DialogTitle>
           <DialogDescription>
-            Add a pre-registered student or admin to the bot roster.
+            Add a student or admin to the roster. Give a Google email, a Discord ID, or both —
+            whichever they sign in or talk to Dobby with.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -98,7 +99,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="uw_email">Google email</Label>
+            <Label htmlFor="uw_email">Google email (for Google sign-in)</Label>
             <Input
               id="uw_email"
               type="email"
@@ -108,7 +109,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="discord_id">Discord ID (optional)</Label>
+            <Label htmlFor="discord_id">Discord ID</Label>
             <Input
               id="discord_id"
               value={form.discord_id}
@@ -151,7 +152,9 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !form.display_name || !form.uw_email}
+            disabled={
+              mutation.isPending || !form.display_name.trim() || !(form.uw_email.trim() || form.discord_id.trim())
+            }
           >
             {mutation.isPending ? 'Adding…' : 'Add user'}
           </Button>

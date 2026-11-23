@@ -8,10 +8,15 @@ export interface User {
   created_at: string
 }
 
+export type IntegrationStatus = 'connected' | 'pending' | 'needs_reconnect' | 'disconnected'
+
 export interface Integration {
   provider: string
+  status: IntegrationStatus
+  // False when Composio couldn't be reached and the status is only the dashboard's record.
+  verified: boolean
   connected_by: string | null
-  connected_at: string
+  connected_at: string | null
 }
 
 export interface AuditEntry {

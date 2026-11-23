@@ -37,14 +37,43 @@ class UserOut(BaseModel):
     created_at: Optional[datetime] = None
 
 
+DISCORD_ID = re.compile(r"^\d{15,21}$")
+
+
+def clean_discord_id(value: Optional[str]) -> Optional[str]:
+    """Discord IDs are 15-21 digit snowflakes; empty clears it."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if DISCORD_ID.match(value) is None:
+        raise ValueError("must be a numeric Discord user ID (Developer Mode → Copy User ID)")
+    return value
+
+
+def clean_name(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise ValueError("must not be empty")
+    if len(value) > 100:
+        raise ValueError("must be at most 100 characters")
+    return value
+
+
 class UserCreate(BaseModel):
-    uw_email: str
+    # Optional: teammates who sign in with Discord or a local account have no Google email.
+    uw_email: Optional[str] = None
     discord_id: Optional[str] = None
     display_name: str
     calendar_email: Optional[str] = None
     role: str = "student"
 
-    _clean = field_validator("calendar_email")(clean_email)
+    _clean = field_validator("calendar_email", "uw_email")(clean_email)
+    _clean_id = field_validator("discord_id")(clean_discord_id)
+    _clean_name = field_validator("display_name")(clean_name)
 
 
 class UserUpdate(BaseModel):
@@ -55,6 +84,8 @@ class UserUpdate(BaseModel):
     calendar_email: Optional[str] = None
 
     _clean = field_validator("calendar_email")(clean_email)
+    _clean_id = field_validator("discord_id")(clean_discord_id)
+    _clean_name = field_validator("display_name")(clean_name)
 
 
 class MeUpdate(BaseModel):
@@ -92,6 +123,10 @@ class IntegrationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     provider: str
+    # connected | pending | needs_reconnect | disconnected — as Composio reports it.
+    status: str = "connected"
+    # False when Composio couldn't be asked and the status is only the dashboard's own record.
+    verified: bool = False
     connected_by: Optional[uuid.UUID] = None
     connected_at: Optional[datetime] = None
 

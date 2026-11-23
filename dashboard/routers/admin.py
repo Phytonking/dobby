@@ -58,16 +58,23 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    # Check uniqueness
-    try:
-        existing = await db.execute(
-            select(User).where(User.uw_email == body.uw_email)
+    if body.role not in ("admin", "student"):
+        raise HTTPException(status_code=422, detail="role must be 'admin' or 'student'")
+    if not body.uw_email and not body.discord_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Add a Google email or a Discord ID so this person can be recognised",
         )
-        if existing.scalar_one_or_none() is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A user with that email already exists",
+    try:
+        if body.uw_email:
+            existing = await db.execute(
+                select(User).where(func.lower(User.uw_email) == body.uw_email)
             )
+            if existing.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with that email already exists",
+                )
 
         user = User(
             uw_email=body.uw_email,
@@ -140,6 +147,9 @@ async def update_user(
         await db.commit()
     except HTTPException:
         raise
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Another user already has that Discord ID") from None
     except Exception:
         logger.exception("Failed to update user %s", user_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")

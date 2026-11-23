@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import (
@@ -131,7 +131,7 @@ async def auth_google_callback(request: Request, db: AsyncSession = Depends(get_
         )
 
     try:
-        result = await db.execute(select(User).where(User.uw_email == email))
+        result = await db.execute(select(User).where(func.lower(User.uw_email) == email.strip().lower()))
         user = result.scalar_one_or_none()
     except Exception:
         logger.exception("DB error during Google callback lookup")
