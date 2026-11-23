@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Calendar, BookOpen, Instagram, Linkedin } from 'lucide-react'
+import { Calendar, BookOpen, FolderOpen, FileText, Instagram, Linkedin } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,18 @@ const PROVIDERS: ProviderConfig[] = [
     label: 'Google Calendar',
     description: "The team calendar Dobby creates events on. Invitees don't need to connect anything.",
     icon: <Calendar className="h-6 w-6 text-blue-400" />,
+  },
+  {
+    key: 'google_drive',
+    label: 'Google Drive',
+    description: 'The Drive Dobby searches and reads. Trashing or sharing a file is confirmed in Discord first.',
+    icon: <FolderOpen className="h-6 w-6 text-yellow-400" />,
+  },
+  {
+    key: 'google_docs',
+    label: 'Google Docs',
+    description: 'Lets Dobby read, create and edit Google Docs in the connected Drive.',
+    icon: <FileText className="h-6 w-6 text-blue-300" />,
   },
   {
     key: 'notion',

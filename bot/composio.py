@@ -18,7 +18,7 @@ log = logging.getLogger("composio")
 # resolves to "latest", which is the default. Pinning also keeps schemas and execution on the
 # same catalog release. Re-check against docs.composio.dev/toolkits/<slug> when updating tools;
 # a stale pin surfaces as `composio_schemas_failed` at startup and no declarations.
-TOOLKIT_VERSIONS = dict.fromkeys(("googlecalendar", "notion", "instagram", "linkedin"), "20260915_00")
+TOOLKIT_VERSIONS = dict.fromkeys(("googlecalendar", "googledrive", "googledocs", "notion", "instagram", "linkedin"), "20260915_00")
 
 
 def get_toolset(api_key: str) -> Composio:

@@ -1,6 +1,6 @@
 """Dobby's service accounts.
 
-One Composio entity (COMPOSIO_ENTITY_ID) owns the Google Calendar, Notion, Instagram and
+One Composio entity (COMPOSIO_ENTITY_ID) owns the Google Calendar, Drive, Docs, Notion, Instagram and
 LinkedIn connections the bot acts through. Nobody links a personal account here, so every route
 is admin-only and the table holds one row per provider.
 """
@@ -30,6 +30,8 @@ ENTITY_ID = os.environ.get("COMPOSIO_ENTITY_ID", "dobby").strip() or "dobby"
 # UI provider keys mapped to current Composio toolkit slugs.
 SUPPORTED_PROVIDERS = {
     "google_calendar": "googlecalendar",
+    "google_drive": "googledrive",
+    "google_docs": "googledocs",
     "notion": "notion",
     "instagram": "instagram",
     "linkedin": "linkedin",

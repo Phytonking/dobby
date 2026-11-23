@@ -34,6 +34,8 @@ class Config:
     ai_settings: ModelSettings | None = None
     # The agent loop's only backstop against a model that keeps calling tools.
     max_tool_calls: int = 40
+    # Luma Plus API key (lu.ma/settings/api); Luma has no Composio toolkit.
+    luma_api_key: str = ""
 
     @classmethod
     def load(cls):
@@ -90,6 +92,7 @@ class Config:
             ai_settings.backup.model if ai_settings.backup else "",
             ai_settings,
             max_tool_calls,
+            os.getenv("LUMA_API_KEY", "").strip(),
         )
 
     def mentionable(self, channel):

@@ -1,7 +1,7 @@
 # Dobby bot architecture
 
 Dobby is a Discord bot for a single guild that turns natural-language requests into actions on
-Google Calendar, Notion, Instagram and LinkedIn. A configurable AI model drives a tool-calling loop; each
+Google Calendar, Google Drive/Docs, Notion, Instagram and LinkedIn. A configurable AI model drives a tool-calling loop; each
 service lives in its own folder under `bot/integrations/` and declares what the model may do with it.
 Nothing conversational is stored: each request reads recent channel messages live, and only
 tool-call metadata is recorded (to `agent_actions`). Anything published to the outside world
@@ -59,6 +59,7 @@ unknown names with a warning), adds the local tools, and joins the prompts.
 | `notion` | search, fetch, create page, add content | — | `/notion search`, `/notion note` | no |
 | `instagram` | none | `list_instagram_posts`, `draft_instagram_post`, `draft_instagram_story` | `/instagram posts`, `post`, `story` | **yes** |
 | `linkedin` | none | `draft_linkedin_post` | `/linkedin post` | **yes** |
+| `google_drive` | find file, get metadata, create folder, move; Docs search, read, create, update | `trash_drive_file`, `share_drive_file` | `/drive search`, `/drive read` | trash and share only |
 
 Publishing integrations expose no direct Composio actions: the model can only *draft*, and the Graph
 API / LinkedIn calls run inside `PendingAction.execute()` after Confirm.

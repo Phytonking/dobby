@@ -16,7 +16,7 @@ def decl(name):
 
 def test_every_integration_has_a_key_label_and_commands():
     keys = [i.key for i in INTEGRATIONS]
-    assert keys == ["google_calendar", "notion", "instagram", "linkedin"]
+    assert keys == ["google_calendar", "notion", "instagram", "linkedin", "luma", "google_drive"]
     for integration in INTEGRATIONS:
         assert integration.label and integration.register_commands and integration.help_lines
 

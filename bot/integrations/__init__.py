@@ -11,7 +11,7 @@ from bot.AIModels import FunctionDeclaration, Tool
 
 from ..composio import declarations_for
 from .base import Integration, LocalTool
-from . import google_calendar, instagram, linkedin, notion
+from . import google_calendar, google_drive, instagram, linkedin, luma, notion
 from .google_calendar.proposals import WRITE_ACTIONS, prepare_calendar_action, with_deferred_invitees
 
 INTEGRATIONS: tuple[Integration, ...] = (
@@ -19,6 +19,8 @@ INTEGRATIONS: tuple[Integration, ...] = (
     notion.INTEGRATION,
     instagram.INTEGRATION,
     linkedin.INTEGRATION,
+    luma.INTEGRATION,
+    google_drive.INTEGRATION,
 )
 
 
