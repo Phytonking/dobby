@@ -5,7 +5,7 @@ boundaries the rest of the dashboard suite uses.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -278,3 +278,191 @@ def lookup_case_insensitive(world):
     assert world.response.status_code == 403
     sql = world.db.statements[0].compile(compile_kwargs={"literal_binds": True})
     assert "lower(users.uw_email) = 'jane@gmail.com'" in str(sql)
+
+
+# ---------------------------------------------------------------------------
+# Bulk import, system health and self-service profile
+# ---------------------------------------------------------------------------
+
+scenarios("features/import_people.feature", "features/system_health.feature")
+
+NOW = datetime(2026, 11, 20, 12, 20, tzinfo=timezone.utc)
+
+
+@given("a CSV:")
+def a_csv(world, docstring):
+    world.csv = docstring
+
+
+@given(parsers.parse('"{email}" is already on the roster'))
+def already_on_roster(world, email):
+    world.existing = [make_user(uw_email=email, discord_id=None)]
+
+
+def _import(world, dry_run):
+    world.db = RecordingDB(results=[getattr(world, "existing", [])])
+    world.response = world.client(world.db).post(
+        "/admin/users/import", json={"csv": world.csv, "dry_run": dry_run}
+    )
+
+
+@when("I preview the import")
+def preview_import(world):
+    _import(world, True)
+
+
+@when("I run the import")
+def run_import(world):
+    _import(world, False)
+
+
+def _import_result(world):
+    assert world.response.status_code == 200, world.response.text
+    return world.response.json()
+
+
+@then(parsers.parse("{count:d} people would be added"))
+def would_add(world, count):
+    body = _import_result(world)
+    assert body["created"] == count
+    assert all(r["outcome"] == "would_create" for r in body["rows"])
+
+
+@then(parsers.parse("{count:d} people are added"))
+@then(parsers.parse("{count:d} person is added"))
+def added(world, count):
+    assert _import_result(world)["created"] == count
+    assert len(world.db.added) == count
+    assert world.db.committed
+
+
+def _added(world, name):
+    return next(u for u in world.db.added if u.display_name == name)
+
+
+@then(parsers.parse('"{name}" is added with Google email "{email}" and calendar email "{calendar}"'))
+def added_with_emails(world, name, email, calendar):
+    user = _added(world, name)
+    assert (user.uw_email, user.calendar_email, user.role) == (email, calendar, "student")
+    assert user.added_by == world.user.id
+
+
+@then(parsers.parse('"{name}" is added as an "{role}" with calendar email "{calendar}"'))
+def added_with_role(world, name, role, calendar):
+    user = _added(world, name)
+    assert (user.role, user.calendar_email, user.uw_email) == (role, calendar, None)
+
+
+@then(parsers.parse('line {line:d} is "{outcome}" because "{reason}"'))
+def line_outcome(world, line, outcome, reason):
+    row = next(r for r in _import_result(world)["rows"] if r["line"] == line)
+    assert row["outcome"] == outcome, row
+    assert reason in (row["reason"] or ""), row
+
+
+@given("these tool calls in the last 24 hours:")
+def tool_calls(world, datatable):
+    header, *rows = datatable
+    world.actions = [
+        SimpleNamespace(
+            tool=dict(zip(header, r))["tool"],
+            status=dict(zip(header, r))["status"],
+            created_at=NOW - timedelta(minutes=int(dict(zip(header, r))["minutes_ago"])),
+        )
+        for r in rows
+    ]
+
+
+@given("no tool calls in the last 24 hours")
+def no_tool_calls(world):
+    world.actions = []
+
+
+@when("I open the system health page")
+def open_health(world):
+    pages = [SimpleNamespace(items=world.pages[0], next_cursor=None)]
+    fake = SimpleNamespace(connected_accounts=SimpleNamespace(list=Mock(side_effect=pages)))
+    world.db = RecordingDB(results=[world.records, getattr(world, "actions", [])])
+    with (
+        patch(f"{MOD}.COMPOSIO_API_KEY", "test-key"),
+        patch(f"{MOD}._get_composio", Mock(return_value=fake)),
+        patch("dashboard.routers.admin._now", return_value=NOW),
+    ):
+        world.response = world.client(world.db).get("/admin/health")
+
+
+def _health(world):
+    assert world.response.status_code == 200, world.response.text
+    return world.response.json()
+
+
+def _service(world, key):
+    return next(s for s in _health(world)["services"] if s["key"] == key)
+
+
+@then(parsers.parse("there were {calls:d} calls and {failures:d} failures in total"))
+def totals(world, calls, failures):
+    body = _health(world)
+    assert (body["calls"], body["failures"]) == (calls, failures)
+
+
+@then(parsers.parse('"{key}" had {calls:d} calls and {failures:d} failures and is "{connection}"'))
+def service_with_connection(world, key, calls, failures, connection):
+    s = _service(world, key)
+    assert (s["calls"], s["failures"], s["connection"]) == (calls, failures, connection)
+
+
+@then(parsers.parse('"{key}" had {calls:d} calls and {failures:d} failures'))
+def service_counts(world, key, calls, failures):
+    s = _service(world, key)
+    assert (s["calls"], s["failures"]) == (calls, failures)
+
+
+@then(parsers.parse("the hourly chart has 24 hours adding up to {total:d} calls"))
+def hourly_total(world, total):
+    hourly = _health(world)["hourly"]
+    assert len(hourly) == 24
+    assert sum(h["ok"] + h["failed"] for h in hourly) == total
+
+
+@then(parsers.parse("the most recent hour shows {ok:d} ok and {failed:d} failed"))
+def latest_hour(world, ok, failed):
+    latest = _health(world)["hourly"][-1]
+    assert (latest["ok"], latest["failed"]) == (ok, failed)
+    assert latest["hour"].startswith("2026-11-20T12:00")
+
+
+@then("every service is listed")
+def every_service(world):
+    keys = [s["key"] for s in _health(world)["services"]]
+    assert keys == [*integrations.SUPPORTED_PROVIDERS, "dobby"]
+
+
+@then("there is no last activity")
+def no_activity(world):
+    assert _health(world)["last_activity_at"] is None
+
+
+@when(parsers.parse('I change my display name to "{name}"'))
+def change_name(world, name):
+    world.db = RecordingDB()
+    world.response = world.client(world.db).patch("/me", json={"display_name": name})
+
+
+@when(parsers.parse('I try to set my own Discord ID to "{discord_id}"'))
+def try_set_discord(world, discord_id):
+    world.original_discord_id = world.user.discord_id
+    world.db = RecordingDB()
+    world.response = world.client(world.db).patch("/me", json={"discord_id": discord_id})
+
+
+@then(parsers.parse('my display name is "{name}"'))
+def display_name_is(world, name):
+    assert world.user.display_name == name
+    assert world.response.json()["display_name"] == name
+
+
+@then("my Discord ID is unchanged")
+def discord_unchanged(world):
+    assert world.user.discord_id == world.original_discord_id
+    assert not world.db.committed

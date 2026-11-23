@@ -63,8 +63,8 @@ export default function AuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Audit Log</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-bold text-foreground">Audit Log</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           A record of all tool calls and bot actions.
         </p>
       </div>
@@ -126,7 +126,7 @@ export default function AuditPage() {
                   {entries && entries.length > 0 ? (
                     entries.map((entry) => (
                       <TableRow key={entry.id}>
-                        <TableCell className="text-xs text-zinc-400 whitespace-nowrap">
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {new Date(entry.created_at).toLocaleString('en-US', {
                             month: 'short',
                             day: 'numeric',
@@ -135,10 +135,10 @@ export default function AuditPage() {
                             second: '2-digit',
                           })}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-zinc-400">
+                        <TableCell className="font-mono text-xs text-muted-foreground">
                           {entry.discord_id ?? '—'}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-zinc-200">
+                        <TableCell className="font-mono text-xs text-foreground">
                           {entry.tool ?? '—'}
                         </TableCell>
                         <TableCell>
@@ -146,14 +146,14 @@ export default function AuditPage() {
                             {entry.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-xs text-zinc-400">
+                        <TableCell className="text-xs text-muted-foreground">
                           {entry.duration_ms != null ? `${entry.duration_ms}ms` : '—'}
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-10 text-center text-zinc-500">
+                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                         No audit entries found.
                       </TableCell>
                     </TableRow>
@@ -162,8 +162,8 @@ export default function AuditPage() {
               </Table>
 
               {/* Pagination */}
-              <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-3">
-                <p className="text-xs text-zinc-400">
+              <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                <p className="text-xs text-muted-foreground">
                   Page {page + 1}
                 </p>
                 <div className="flex gap-2">

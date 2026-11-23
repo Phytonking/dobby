@@ -48,3 +48,19 @@ Feature: People and their emails
   Scenario: Google sign-in finds a teammate whatever case their email was typed in
     When someone signs in with Google as "Jane@Gmail.com"
     Then the user lookup compares emails case-insensitively
+
+  Scenario: A teammate renames themselves
+    Given I am signed in as a student
+    When I change my display name to "  Jane D. "
+    Then the request succeeds
+    And my display name is "Jane D."
+
+  Scenario: A teammate cannot blank their name
+    Given I am signed in as a student
+    When I change my display name to " "
+    Then the request is refused with 422
+
+  Scenario: A teammate cannot change how they are recognised
+    Given I am signed in as a student
+    When I try to set my own Discord ID to "999999999999999999"
+    Then my Discord ID is unchanged

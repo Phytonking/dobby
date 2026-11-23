@@ -32,3 +32,37 @@ export interface Paginated<T> {
   total: number
   items: T[]
 }
+
+export interface ImportRow {
+  line: number
+  display_name: string | null
+  outcome: 'created' | 'would_create' | 'skipped' | 'invalid'
+  reason: string | null
+}
+
+export interface ImportResult {
+  created: number
+  skipped: number
+  invalid: number
+  rows: ImportRow[]
+}
+
+export interface ServiceHealth {
+  key: string
+  connection: IntegrationStatus | null
+  calls: number
+  failures: number
+  last_success_at: string | null
+  last_failure_at: string | null
+}
+
+export interface HealthReport {
+  window_hours: number
+  generated_at: string
+  composio_verified: boolean
+  calls: number
+  failures: number
+  last_activity_at: string | null
+  services: ServiceHealth[]
+  hourly: { hour: string; ok: number; failed: number }[]
+}

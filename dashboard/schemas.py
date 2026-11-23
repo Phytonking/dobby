@@ -89,11 +89,17 @@ class UserUpdate(BaseModel):
 
 
 class MeUpdate(BaseModel):
-    """What a signed-in user may change about themselves."""
+    """What a signed-in user may change about themselves.
 
+    Not their Discord ID or Google email: those decide who the bot and the login treat
+    them as, so only an admin changes them.
+    """
+
+    display_name: Optional[str] = None
     calendar_email: Optional[str] = None
 
     _clean = field_validator("calendar_email")(clean_email)
+    _clean_name = field_validator("display_name")(clean_name)
 
 
 class UserRoleUpdate(BaseModel):
@@ -158,3 +164,59 @@ class PaginatedUsers(BaseModel):
 class PaginatedAudit(BaseModel):
     total: int
     items: list[AuditLogEntry]
+
+
+# ---------------------------------------------------------------------------
+# Bulk import
+# ---------------------------------------------------------------------------
+
+class UserImport(BaseModel):
+    """A CSV export (Google Contacts, a sign-up sheet, ...) pasted or uploaded by an admin."""
+
+    csv: str
+    # Preview only: validate and report what would happen without saving anything.
+    dry_run: bool = False
+
+
+class ImportRow(BaseModel):
+    line: int
+    display_name: Optional[str] = None
+    outcome: str  # created | would_create | skipped | invalid
+    reason: Optional[str] = None
+
+
+class ImportResult(BaseModel):
+    created: int
+    skipped: int
+    invalid: int
+    rows: list[ImportRow]
+
+
+# ---------------------------------------------------------------------------
+# System health
+# ---------------------------------------------------------------------------
+
+class HealthBucket(BaseModel):
+    hour: datetime
+    ok: int
+    failed: int
+
+
+class ServiceHealth(BaseModel):
+    key: str  # a provider key, or "dobby" for Dobby's own tools
+    connection: Optional[str] = None  # live Composio status; None for Dobby itself
+    calls: int
+    failures: int
+    last_success_at: Optional[datetime] = None
+    last_failure_at: Optional[datetime] = None
+
+
+class HealthReport(BaseModel):
+    window_hours: int
+    generated_at: datetime
+    composio_verified: bool
+    calls: int
+    failures: int
+    last_activity_at: Optional[datetime] = None
+    services: list[ServiceHealth]
+    hourly: list[HealthBucket]

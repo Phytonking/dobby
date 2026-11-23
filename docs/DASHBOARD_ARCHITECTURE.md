@@ -54,7 +54,7 @@ settings and the audit log, and the admin-only Composio connections for Dobby's 
 | **meta** | | | |
 | GET | `/health` | none | Liveness check; returns `{"ok": true}` |
 | GET | `/me` | user | Current user (`UserOut`) |
-| PATCH | `/me` | user | Set or clear your own `calendar_email` (validated; empty clears) |
+| PATCH | `/me` | user | Set or clear your own `calendar_email` (validated; empty clears) and change your `display_name`. Not your Discord ID or Google email: those decide who you are, so only admins change them |
 | **auth** (`routers/auth.py`) | | | |
 | GET | `/auth/methods` | none | Return `{local: boolean, oauth: boolean}` from `AUTH_MODE` |
 | POST | `/auth/local` | local network | Verify username/password, set session cookie; 200 on success |
@@ -69,6 +69,8 @@ settings and the audit log, and the admin-only Composio connections for Dobby's 
 | PATCH | `/admin/users/{user_id}` | admin | Edit `display_name`, `discord_id`, `calendar_email` (only fields sent; Discord IDs must be numeric) |
 | DELETE | `/admin/users/{user_id}` | admin | Delete a user (not yourself); 204 |
 | PATCH | `/admin/users/{user_id}/role` | admin | Set the role to `admin` or `student` |
+| POST | `/admin/users/import` | admin | Bulk-add from CSV (`{csv, dry_run}`; ≤256 KB, ≤500 rows). Needs a name column and an email or Discord ID column; Google Contacts exports work. Existing people (by email or Discord ID) and in-file duplicates are skipped, never changed; invalid rows are reported per line. Calendar email defaults to the email. `dry_run` previews without saving |
+| GET | `/admin/health` | admin | Last 24 h: live connection status per provider plus tool calls, failures and last success/failure per service (from `agent_actions`, tools mapped to services by name prefix), and 24 hourly buckets |
 | GET | `/admin/audit?limit&offset&tool&status` | admin | Paginated `agent_actions` (limit ≤ 500), written by the bot; tool name, status and timing only |
 | **integrations** (`routers/integrations.py`) | | | |
 | GET | `/integrations` | admin | Every supported provider with its live Composio `status` (`connected`, `pending`, `needs_reconnect`, `disconnected`) and `verified`; falls back to the local rows (`verified: false`) when Composio is unreachable |

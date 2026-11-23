@@ -50,9 +50,10 @@ The `@/*` import alias maps to `./src/*`.
 | ---------------------------- | --------- | --------------------------------------------------------------------------------------- | ------ |
 | `/`                          | Server    | Nothing. Goes to `/dashboard` if a `dobby_session` cookie exists, otherwise to `/login`. | Anyone |
 | `/login` | Client | Fetches `/auth/methods`; displays Google/Discord buttons, a local username/password form, or both | Anyone who can reach the configured API |
-| `/dashboard`                 | Client    | Welcome line and a **Calendar email** card: edit your own address (`PATCH /me`)         | Signed in |
-| `/dashboard/integrations`    | Client    | Dobby's service accounts: Google Calendar, Notion, Instagram, LinkedIn cards with Connect/Disconnect. Non-admins see an "admins only" notice | Admin |
-| `/dashboard/admin/users`     | Client    | Allowlist table with calendar emails: add user (dialog), edit name/Discord ID/calendar email (dialog), promote/demote, remove | Admin* |
+| `/dashboard`                 | Client    | Welcome line, a **Calendar email** card and a **Your profile** card (display name; Google/Discord identity read-only), both via `PATCH /me` | Signed in |
+| `/dashboard/integrations`    | Client    | Dobby's service accounts: Google Calendar, Notion, Instagram, LinkedIn cards with their live Composio status (Connected, Finishing sign-in, Needs reconnect, Disconnected) and Connect/Reconnect/Disconnect. Non-admins see an "admins only" notice | Admin |
+| `/dashboard/admin/users`     | Client    | Allowlist table with calendar emails: add user (dialog), import a CSV with preview (dialog), edit name/Discord ID/calendar email (dialog), promote/demote, remove | Admin* |
+| `/dashboard/admin/health`    | Client    | System health for the last 24 h: summary tiles, calls-per-hour chart, a card per service with connection status, calls and failures. Refreshes every minute | Admin* |
 | `/dashboard/admin/audit`     | Client    | Audit log table with tool and status filters, 25 rows per page (limit/offset)           | Admin* |
 
 \* The frontend's role check is cosmetic. `Nav` hides the Admin section unless `user.role === 'admin'`,
@@ -60,8 +61,7 @@ but the `admin/*` pages don't check the role themselves. The API enforces it.
 
 ## Layouts, providers, shared components
 
-- **Root layout** (`app/layout.tsx`): sets the page title "Dobby | UW Student Portal", forces dark mode
-  and wraps everything in `Providers`.
+- **Root layout** (`app/layout.tsx`): sets the page title "Dobby | UW Student Portal" and wraps everything in `Providers`. The theme is a light palette defined as CSS variables in `globals.css`; components use the semantic Tailwind tokens (`bg-card`, `text-muted-foreground`, `bg-primary`, ...) rather than fixed colours.
 - **Providers** (`components/providers.tsx`): creates one `QueryClient` per browser session. Query
   defaults: `staleTime` 60 s; retry up to 2 times, but not when the error message contains `401`.
 - **Dashboard layout** (`app/dashboard/layout.tsx`, server component): forwards all request cookies to

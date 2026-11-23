@@ -35,26 +35,26 @@ export default function LoginPage() {
     }
   }
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-4">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         {/* Logo / wordmark */}
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 ring-1 ring-indigo-500/30">
-            <Bot className="h-7 w-7 text-indigo-400" />
+            <Bot className="h-7 w-7 text-indigo-600" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Dobby Dashboard</h1>
-            <p className="mt-1.5 text-sm text-zinc-400">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Dobby Dashboard</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
               Team portal &mdash; pre-registration required.
             </p>
           </div>
         </div>
 
-        {isLoading && <p role="status" className="text-sm text-zinc-400">Loading sign-in options...</p>}
+        {isLoading && <p role="status" className="text-sm text-muted-foreground">Loading sign-in options...</p>}
         {/* Show what the API actually said — "Local network access only" and a CORS
             failure are the same symptom here, and only the detail tells them apart. */}
         {isError && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-red-600">
             Cannot reach the dashboard API
             {methodsError instanceof Error && methodsError.message ? ` — ${methodsError.message}` : ''}.
             {' '}Check the server address and connection, then reload.
@@ -62,16 +62,16 @@ export default function LoginPage() {
         )}
         {methods?.local && (
           <form onSubmit={login} className="mb-6 flex flex-col gap-3">
-            <h2 className="text-lg font-medium text-zinc-100">Local account</h2>
+            <h2 className="text-lg font-medium text-foreground">Local account</h2>
             <Label htmlFor="username">Username</Label>
             <Input id="username" autoComplete="username" required maxLength={64}
               value={username} onChange={(event) => setUsername(event.target.value)} />
             <Label htmlFor="password">Password</Label>
             <Input id="password" type="password" autoComplete="current-password" required maxLength={256}
               value={password} onChange={(event) => setPassword(event.target.value)} />
-            {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+            {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
             <Button type="submit" disabled={pending}>{pending ? 'Signing in...' : 'Sign in'}</Button>
-            <p className="text-xs text-zinc-500">Use an account created by your server administrator. Local network access required.</p>
+            <p className="text-xs text-muted-foreground">Use an account created by your server administrator. Local network access required.</p>
           </form>
         )}
         {methods?.oauth && (
@@ -79,7 +79,7 @@ export default function LoginPage() {
           <Button
             asChild
             size="lg"
-            className="w-full bg-white text-zinc-900 hover:bg-zinc-100"
+            className="w-full border border-border bg-card text-foreground hover:bg-muted"
           >
             <Link href={`${API}/auth/google`}>
               <GoogleIcon />
@@ -91,7 +91,7 @@ export default function LoginPage() {
             asChild
             size="lg"
             variant="outline"
-            className="w-full border-[#5865F2]/40 bg-[#5865F2]/10 text-zinc-100 hover:bg-[#5865F2]/20 hover:border-[#5865F2]/60"
+            className="w-full border-[#5865F2]/40 bg-[#5865F2]/10 text-foreground hover:bg-[#5865F2]/20 hover:border-[#5865F2]/60"
           >
             <Link href={`${API}/auth/discord`}>
               <DiscordIcon />
@@ -101,7 +101,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <p className="mt-6 text-center text-xs text-zinc-500">
+        <p className="mt-6 text-center text-xs text-muted-foreground">
           Access is restricted to pre-registered members.
         </p>
       </div>

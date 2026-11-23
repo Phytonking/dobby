@@ -1,4 +1,4 @@
-import type { User, Integration, AuditEntry, Paginated } from './types'
+import type { User, Integration, AuditEntry, Paginated, ImportResult, HealthReport } from './types'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -48,7 +48,7 @@ export const api = {
     method: 'POST', body: JSON.stringify({ username, password }),
   }),
   me: () => request<User>('/me'),
-  updateMe: (data: { calendar_email: string | null }) =>
+  updateMe: (data: { calendar_email?: string | null; display_name?: string }) =>
     request<User>('/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
@@ -71,10 +71,16 @@ export const api = {
       }) => request<User>('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
       update: (id: string, data: UserEdit) =>
         request<User>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+      import: (csv: string, dryRun: boolean) =>
+        request<ImportResult>('/admin/users/import', {
+          method: 'POST',
+          body: JSON.stringify({ csv, dry_run: dryRun }),
+        }),
       remove: (id: string) => request<void>(`/admin/users/${id}`, { method: 'DELETE' }),
       setRole: (id: string, role: string) =>
         request<User>(`/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
     },
+    health: () => request<HealthReport>('/admin/health'),
     audit: (params?: { limit?: number; offset?: number; tool?: string; status?: string }) => {
       const q = new URLSearchParams(
         Object.fromEntries(
