@@ -71,6 +71,7 @@ FALLBACK = {
     ),
     "no_answer": "Dobby's magic gave back nothing at all. Please ask again, perhaps more simply?",
     "done": "Dobby has done it!",
+    "dm_closed": "Dobby has closed this Instagram DM thread. Nothing was sent back.",
     "tool_limit": (
         "Oh dear, Dobby tried a great many things and must stop. Please break the request into smaller steps."
     ),

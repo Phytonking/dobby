@@ -176,4 +176,4 @@ def test_local_tools_validate_queue_and_report_config_problems():
 
 def test_integration_exposes_no_direct_actions():
     assert INTEGRATION.actions == ()
-    assert len(INTEGRATION.local_tools) == 3
+    assert len(INTEGRATION.local_tools) == 4

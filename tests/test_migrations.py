@@ -70,3 +70,5 @@ def test_offline_generates_all_migrations(monkeypatch):
     assert "ADD COLUMN calendar_email_updated_at" in sql
     assert "ADD COLUMN proposed_at" in sql
     assert "ADD COLUMN attempts" in sql
+    assert "CREATE TABLE instagram_dm_threads" in sql
+    assert "uq_instagram_dm_conversation" in sql

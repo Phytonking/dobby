@@ -25,9 +25,12 @@ def test_publishing_integrations_expose_no_direct_composio_actions():
     by_key = {i.key: i for i in INTEGRATIONS}
     assert by_key["instagram"].actions == () and by_key["linkedin"].actions == ()
     assert "draft_linkedin_post" in {t.name for t in by_key["linkedin"].local_tools}
-    assert {"list_instagram_posts", "draft_instagram_post", "draft_instagram_story"} == {
-        t.name for t in by_key["instagram"].local_tools
-    }
+    assert {
+        "list_instagram_posts",
+        "draft_instagram_post",
+        "draft_instagram_story",
+        "draft_instagram_dm_reply",
+    } == {t.name for t in by_key["instagram"].local_tools}
 
 
 def test_build_registry_merges_composio_and_local_tools_with_owners():

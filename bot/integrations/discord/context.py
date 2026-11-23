@@ -17,17 +17,18 @@ MENTION = re.compile(r"<@!?(\d+)>")
 MAX_MESSAGE_CHARS = 500
 
 
-async def gather_context(channel, *, limit: int, before=None) -> list[str]:
+async def gather_context(channel, *, limit: int, before=None, include_author_ids=()) -> list[str]:
     """The last `limit` non-bot messages in `channel`, oldest first, one line each.
 
     `before` excludes the triggering message so the request is not repeated as context.
+    `include_author_ids` keeps bot messages from those authors (Dobby's own relayed Instagram DMs).
     Missing Read Message History permission yields no context rather than a failure.
     """
     lines = []
     try:
         # Bots may post often; scan a few times the limit to find enough human messages.
         async for message in channel.history(limit=limit * 4, before=before):
-            if message.author.bot:
+            if message.author.bot and not (include_author_ids and message.author.id in include_author_ids):
                 continue
             lines.append(format_message(message))
             if len(lines) >= limit:

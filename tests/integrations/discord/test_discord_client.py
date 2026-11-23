@@ -88,18 +88,34 @@ def make_message(bot, content="<@5> schedule a meeting"):
 
 
 def test_all_integration_commands_are_registered():
-    bot = make_bot()
+    bot = make_bot(make_config(instagram_dm_channel=900))
     names = {c.name for c in bot.tree.get_commands()}
-    assert {"email", "help", "schedule", "events", "notion", "instagram", "linkedin", "luma", "drive"} <= names
+    assert {
+        "email",
+        "help",
+        "schedule",
+        "events",
+        "notion",
+        "instagram",
+        "dm",
+        "linkedin",
+        "luma",
+        "drive",
+    } <= names
     assert "contacts" not in names and "calendar_help" not in names
     groups = {c.name: {s.name for s in c.commands} for c in bot.tree.get_commands() if hasattr(c, "commands")}
     assert groups == {
         "notion": {"search", "note"},
         "instagram": {"posts", "post", "story"},
+        "dm": {"reply", "close"},
         "linkedin": {"post"},
         "luma": {"events", "guests"},
         "drive": {"search", "read"},
     }
+
+
+def test_dm_command_only_exists_when_the_relay_is_on():
+    assert "dm" not in {c.name for c in make_bot().tree.get_commands()}
 
 
 # ---------------------------------------------------------------------------

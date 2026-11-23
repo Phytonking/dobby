@@ -23,6 +23,20 @@ def preview_text(pending: list[PendingAction]) -> str:
     return say("preview_intro") + "\n\n" + "\n\n".join(blocks)
 
 
+async def run_after_success(actions: list[PendingAction], channel) -> None:
+    """Follow-ups for actions that ran, once their outcome is visible; a failing hook is only logged.
+
+    `channel` may be None (e.g. a partial interaction); hooks must cope with that.
+    """
+    for action in actions:
+        if action.after_success is None:
+            continue
+        try:
+            await action.after_success(channel)
+        except Exception as exc:
+            log.warning("after_success_failed integration=%s type=%s", action.integration, type(exc).__name__)
+
+
 class ConfirmView(discord.ui.View):
     def __init__(self, pending: list[PendingAction], requester_id: int, guild_id: str, channel_id: str):
         super().__init__(timeout=TIMEOUT_SECONDS)
@@ -61,6 +75,7 @@ class ConfirmView(discord.ui.View):
             return
         await interaction.response.edit_message(content=say("working"), view=self)
         lines = []
+        succeeded = []
         for action in self.pending:
             start = time.monotonic()
             try:
@@ -86,8 +101,11 @@ class ConfirmView(discord.ui.View):
             except Exception as exc:
                 log.warning("audit_failed type=%s", type(exc).__name__)
             lines.append(say("published" if ok else "publish_failed", label=action.label))
+            if ok:
+                succeeded.append(action)
         await interaction.edit_original_response(content="\n".join(lines)[:2000], view=self)
         self.stop()
+        await run_after_success(succeeded, getattr(interaction, "channel", None))
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button):

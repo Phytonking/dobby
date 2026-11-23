@@ -18,7 +18,8 @@ flowchart LR
     C --> N[Notion]
     C --> IG[Instagram]
     C --> LI[LinkedIn]
-    B -->|users, calendar emails, audit metadata| P[(Postgres)]
+    IG -.->|DMs, polled| B
+    B -->|users, calendar emails, DM thread ids/cursors, audit metadata| P[(Postgres)]
     A[Admin browser] --> F[frontend :3000] --> API[dashboard :8000]
     API --> P
     API -->|connect service accounts| C
@@ -43,10 +44,11 @@ The root `Dockerfile` has stages `base` (dependencies + `bot/`), `migrate`, `tes
 | `bot/integrations/base.py` | `Integration`, `LocalTool`, `PendingAction`, `RunContext` |
 | `bot/integrations/discord/` | The transport: client (gating, cooldown, mentions), live channel context, `/email` + `/help`, the Confirm/Cancel view |
 | `bot/integrations/google_calendar/`, `notion/`, `instagram/`, `linkedin/` | One folder per service: Composio actions the model may call, local tools, slash commands, prompt guidance, publish helpers |
+| `bot/integrations/instagram/dms.py`, `relay.py` | Optional Instagram DM relay: a poller opens a Discord thread per conversation; `/dm reply` (Confirm-gated) answers and closes it, `/dm close` closes it |
 | `bot/voice.py`, `bot/responses/` | Dobby's phrasings, 20 per situation |
 | `dashboard/` | Login (Google/Discord OAuth and/or local LAN accounts), user roster and calendar emails, admin-only service-account connections, audit log |
 | `frontend/` | The web UI for the above |
-| `migrations/` | Alembic schema (`001_initial`, `002_merge_contacts_service_integrations`) |
+| `migrations/` | Alembic schema (`001_initial` … `006_instagram_dm_threads`) |
 | `scripts/bootstrap.py` | Create `.env` before the first run; repair a Docker-created directory |
 | `scripts/check_secrets.py` | CI guard against committed credentials |
 | `scripts/update-pi.sh`, `deploy/` | Optional Pi pull-and-recreate timer for the published bot image |
@@ -66,7 +68,7 @@ Details: [docs/BOT_ARCHITECTURE.md](docs/BOT_ARCHITECTURE.md).
 
 - **`.env`** holds the Discord token, AI provider and Composio keys, optional dashboard OAuth client secrets, the cookie secret and the Postgres password. Compose passes them as environment; Git and Docker builds ignore the file. Dotenv interpolation is off; explicit process environment wins.
 - **Composio** holds the OAuth tokens for Google Calendar, Notion, Instagram and LinkedIn under one entity (`COMPOSIO_ENTITY_ID`). Dobby never sees provider tokens; revoking in Composio cuts it off. Only dashboard admins can connect or disconnect.
-- **Postgres** holds people (names, Google emails and local credential hashes, Discord IDs, calendar emails), dashboard sessions, which providers are connected, and tool-call metadata. No message content, tool arguments or results are stored.
+- **Postgres** holds people (names, Google emails and local credential hashes, Discord IDs, calendar emails), dashboard sessions, which providers are connected, tool-call metadata, and for the Instagram DM relay only conversation/thread IDs, the sender's Instagram-scoped ID, open/closed and a read cursor. No message content, tool arguments or results are stored.
 - **Discord allowlists** delegate the connected accounts' capabilities to a role: anyone with it can create events, write Notion pages and — after their own Confirm — publish to the group's social accounts, all as Dobby. Restrict the role.
 - The dashboard signs sessions with `SECRET_KEY`; login supports OAuth and/or LAN username/password accounts (`AUTH_MODE`), restricted to pre-registered users (verified Google accounts from any domain, known Discord IDs, or administrator-created local usernames). `PATCH /me` lets a user change only their own calendar email. Local credentials are salted scrypt hashes in Postgres (migration 003), created/reset with `python -m dashboard.local_admin USERNAME`. Local login and sessions require a private/loopback client address; host firewall restrictions remain necessary with Docker or proxies. See [dashboard setup](README.md#step-5-dashboard-login).
 - Logs carry Discord actor/guild IDs and tool names, never prompts, message text or credentials. The selected AI provider's data policy applies.
@@ -77,7 +79,7 @@ Main pushes verify code and publish AMD64/ARM64 bot images with GitHub's built-i
 
 ## Persistence and operating limits
 
-One bot instance per Discord token: cooldowns and Confirm views are process-local. Google Calendar remains the event store. The bot writes only `agent_actions`; users and their emails come from the dashboard. Composio action names are checked at startup (`composio_action_unknown`), not at build time. Instagram publishing needs a Business/Creator account and public image URLs; a story featuring a post cannot carry the share sticker. AI and integration provider quotas apply regardless of where Dobby is hosted.
+One bot instance per Discord token: cooldowns and Confirm views are process-local. Google Calendar remains the event store. The bot writes `agent_actions`, `calendar_invites` and `instagram_dm_threads`; users and their emails come from the dashboard. The DM relay polls Instagram (no inbound webhooks) and its in-process poller is another reason to run one bot instance. Composio action names are checked at startup (`composio_action_unknown`), not at build time. Instagram publishing needs a Business/Creator account and public image URLs; a story featuring a post cannot carry the share sticker. AI and integration provider quotas apply regardless of where Dobby is hosted.
 
 ## Verification
 
