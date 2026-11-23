@@ -23,6 +23,9 @@ class PendingAction:
     # Called with "cancelled" or "expired" when the requester declines or never confirms, so anything
     # the action reserved can be given back. Never called after a confirmed run.
     release: Callable[[str], Awaitable[None]] | None = None
+    # Called with the Discord channel the requester confirmed in, after a successful run has been
+    # reported there (e.g. to close the Instagram DM thread a reply was sent from). Never on failure.
+    after_success: Callable[[object], Awaitable[None]] | None = None
 
 
 @dataclass

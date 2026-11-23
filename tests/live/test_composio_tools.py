@@ -25,3 +25,12 @@ def test_every_curated_action_resolves(toolset, integration):
     assert resolved == set(integration.actions), f"unknown actions: {set(integration.actions) - resolved}"
     for declaration in declarations:
         assert declaration.parameters is None or isinstance(declaration.parameters, dict)
+
+
+def test_instagram_actions_called_inside_local_tools_resolve(toolset):
+    """Instagram exposes no direct actions to the model, so its publish and DM actions are checked here."""
+    from bot.integrations.instagram import dms, publish
+
+    actions = (publish.LIST_MEDIA, publish.CREATE_CONTAINER, publish.PUBLISH, *dms.DM_ACTIONS)
+    resolved = {d.name for d in declarations_for(toolset, actions)}
+    assert resolved == set(actions), f"unknown actions: {set(actions) - resolved}"

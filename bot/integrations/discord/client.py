@@ -16,6 +16,7 @@ from .calendar_confirm import present_calendar, present_invite_approval
 from .context import gather_context, resolve_mentions
 from .emails import capture_email, recover_recent_emails
 from ..google_calendar.invitations import APPROVAL_SECONDS, reconcile_invites
+from ..instagram.relay import DmRelay, relay_parent_id
 
 log = logging.getLogger("scheduler")
 
@@ -37,6 +38,8 @@ class Bot(discord.Client):
         self.agent.toolset = self.toolset
         self.cooldowns = {}
         self.calendar_confirmations = {}
+        # Instagram DMs → Discord threads; off unless INSTAGRAM_DM_CHANNEL_ID is set.
+        self.dm_relay = DmRelay(self) if getattr(config, "instagram_dm_channel", 0) else None
         self.register_commands()
 
     # ------------------------------------------------------------------ access
@@ -103,19 +106,23 @@ class Bot(discord.Client):
 
     # ------------------------------------------------------------------ requests
 
+    def gate_channel_id(self, channel):
+        """The channel whose allowlists apply: an Instagram DM relay thread answers to its parent."""
+        return relay_parent_id(self.config, channel) or channel.id
+
     async def on_message(self, message):
         if (
             message.author.bot
             or not message.guild
             or message.guild.id != self.config.guild
-            or not self.config.mentionable(message.channel.id)
+            or not self.config.mentionable(self.gate_channel_id(message.channel))
         ):
             return
         if await capture_email(self, message):
             return
         if self.user not in message.mentions:
             return
-        if not await self.member_allowed(message.author.id, message.channel.id):
+        if not await self.member_allowed(message.author.id, self.gate_channel_id(message.channel)):
             await message.reply(say("not_authorized"), mention_author=False)
             return
         if not self.take_cooldown(message.author.id):
@@ -145,7 +152,11 @@ class Bot(discord.Client):
         """Gather live channel context and mentioned people, then run the agent once."""
         await recover_recent_emails(self, channel, before=before)
         await self.reconcile_calendar_invites()
-        context = await gather_context(channel, limit=self.config.context_limit, before=before)
+        # In a relay thread the DM itself was posted by Dobby, so keep Dobby's lines as context too.
+        extra = {}
+        if relay_parent_id(self.config, channel) and self.user:
+            extra["include_author_ids"] = {self.user.id}
+        context = await gather_context(channel, limit=self.config.context_limit, before=before, **extra)
         async with SessionLocal() as session:
             request, people = await resolve_mentions(session, request)
             return await self.agent.run(
@@ -225,6 +236,8 @@ class Bot(discord.Client):
             if entry.task:
                 entry.task.cancel()
         self.calendar_confirmations.clear()
+        if self.dm_relay is not None:
+            self.dm_relay.stop()
         await super().close()
 
     def register_commands(self):
@@ -246,6 +259,8 @@ class Bot(discord.Client):
         guild = discord.Object(id=self.config.guild)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
+        if self.dm_relay is not None:
+            self.dm_relay.start()
 
     async def on_ready(self):
         log.info("bot_ready guild=%s model=%s", self.config.guild, self.config.model)

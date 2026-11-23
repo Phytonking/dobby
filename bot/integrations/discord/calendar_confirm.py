@@ -9,7 +9,7 @@ import discord
 from ...db import SessionLocal
 from ...memory import record_action
 from ...voice import say
-from .confirm import TIMEOUT_SECONDS
+from .confirm import TIMEOUT_SECONDS, run_after_success
 
 log = logging.getLogger("confirm")
 CONFIRM, CANCEL = "🟢", "🔴"
@@ -88,6 +88,7 @@ class CalendarConfirmation:
             return
         await self.message.edit(content=say("working"))
         lines = []
+        succeeded = []
         for action in self.pending:
             start = time.monotonic()
             result = {}
@@ -112,6 +113,7 @@ class CalendarConfirmation:
             except Exception as exc:
                 log.warning("audit_failed type=%s", type(exc).__name__)
             if ok:
+                succeeded.append(action)
                 lines.append(result.get("message") or say("published", label=action.label))
                 if result.get("deferred_invites"):
                     asked = await self.bot.reconcile_calendar_invites()
@@ -125,6 +127,7 @@ class CalendarConfirmation:
                     or f"Dobby could not complete **{action.label}**. Please check the calendar before trying again."
                 )
         await self.finish("\n\n".join(lines))
+        await run_after_success(succeeded, self.message.channel)
 
     async def finish(self, content):
         self.bot.calendar_confirmations.pop(self.message.id, None)
