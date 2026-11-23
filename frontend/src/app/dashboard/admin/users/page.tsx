@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Trash2, ShieldCheck, ShieldOff, Pencil } from 'lucide-react'
+import { UserPlus, Trash2, ShieldCheck, ShieldOff, Pencil, Upload } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api } from '@/lib/api'
-import type { User } from '@/lib/types'
+import type { ImportResult, User } from '@/lib/types'
 
 interface NewUserForm {
   display_name: string
@@ -60,7 +60,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
     mutationFn: () =>
       api.admin.users.create({
         display_name: form.display_name,
-        uw_email: form.uw_email,
+        uw_email: form.uw_email.trim() || undefined,
         discord_id: form.discord_id || undefined,
         calendar_email: form.calendar_email || undefined,
         role: form.role,
@@ -84,7 +84,8 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
         <DialogHeader>
           <DialogTitle>Add user to allowlist</DialogTitle>
           <DialogDescription>
-            Add a pre-registered student or admin to the bot roster.
+            Add a student or admin to the roster. Give a Google email, a Discord ID, or both —
+            whichever they sign in or talk to Dobby with.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -98,7 +99,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="uw_email">Google email</Label>
+            <Label htmlFor="uw_email">Google email (for Google sign-in)</Label>
             <Input
               id="uw_email"
               type="email"
@@ -108,7 +109,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="discord_id">Discord ID (optional)</Label>
+            <Label htmlFor="discord_id">Discord ID</Label>
             <Input
               id="discord_id"
               value={form.discord_id}
@@ -143,7 +144,7 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </div>
         {mutation.isError && (
-          <p className="text-sm text-red-400">{(mutation.error as Error).message}</p>
+          <p className="text-sm text-red-600">{(mutation.error as Error).message}</p>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -151,10 +152,176 @@ function AddUserDialog({ onSuccess }: { onSuccess: () => void }) {
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !form.display_name || !form.uw_email}
+            disabled={
+              mutation.isPending || !form.display_name.trim() || !(form.uw_email.trim() || form.discord_id.trim())
+            }
           >
             {mutation.isPending ? 'Adding…' : 'Add user'}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const SAMPLE_CSV = `name,email,discord_id,calendar_email,role
+Jane Doe,jane@gmail.com,,,student
+Sam Lee,,123456789012345678,sam@uw.edu,student`
+
+const OUTCOME_STYLE: Record<string, { label: string; variant: 'success' | 'secondary' | 'error' }> = {
+  created: { label: 'Added', variant: 'success' },
+  would_create: { label: 'Will add', variant: 'success' },
+  skipped: { label: 'Skipped', variant: 'secondary' },
+  invalid: { label: 'Problem', variant: 'error' },
+}
+
+function ImportUsersDialog({ onSuccess }: { onSuccess: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [csv, setCsv] = useState('')
+  const [preview, setPreview] = useState<ImportResult | null>(null)
+  const [done, setDone] = useState<ImportResult | null>(null)
+
+  const reset = () => {
+    setCsv('')
+    setPreview(null)
+    setDone(null)
+  }
+
+  const previewMutation = useMutation({
+    mutationFn: () => api.admin.users.import(csv, true),
+    onSuccess: setPreview,
+  })
+  const importMutation = useMutation({
+    mutationFn: () => api.admin.users.import(csv, false),
+    onSuccess: (result) => {
+      setDone(result)
+      onSuccess()
+    },
+  })
+
+  const result = done ?? preview
+  const error = (previewMutation.error ?? importMutation.error) as Error | null
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) reset()
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-2">
+          <Upload className="h-4 w-4" />
+          Import CSV
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Import teammates</DialogTitle>
+          <DialogDescription>
+            Upload or paste a CSV with a <strong>name</strong> column and an <strong>email</strong> or{' '}
+            <strong>discord_id</strong> column. Optional: calendar_email, role. A Google Contacts export
+            works too. People already on the roster are skipped, never changed.
+          </DialogDescription>
+        </DialogHeader>
+        {!done && (
+          <div className="grid gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="import_file">CSV file</Label>
+              <Input
+                id="import_file"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setCsv(await file.text())
+                    setPreview(null)
+                  }
+                }}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="import_csv">…or paste it</Label>
+              <textarea
+                id="import_csv"
+                value={csv}
+                onChange={(e) => {
+                  setCsv(e.target.value)
+                  setPreview(null)
+                }}
+                rows={6}
+                placeholder={SAMPLE_CSV}
+                className="w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-xs text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-red-600">
+            {error.message}
+          </p>
+        )}
+        {result && (
+          <div className="space-y-3">
+            <p role="status" className="text-sm text-foreground">
+              {done
+                ? `Added ${done.created} ${done.created === 1 ? 'person' : 'people'}.`
+                : `${result.created} to add.`}{' '}
+              {result.skipped > 0 && `${result.skipped} skipped. `}
+              {result.invalid > 0 && `${result.invalid} with problems${done ? ' were not added' : ' will be left out'}.`}
+            </p>
+            <div className="max-h-64 overflow-y-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Line</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Result</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {result.rows.map((row) => (
+                    <TableRow key={row.line}>
+                      <TableCell className="text-muted-foreground">{row.line}</TableCell>
+                      <TableCell>{row.display_name ?? '—'}</TableCell>
+                      <TableCell>
+                        <Badge variant={OUTCOME_STYLE[row.outcome].variant}>{OUTCOME_STYLE[row.outcome].label}</Badge>
+                        {row.reason && <span className="ml-2 text-xs text-muted-foreground">{row.reason}</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          {done ? (
+            <Button onClick={() => setOpen(false)}>Done</Button>
+          ) : preview ? (
+            <>
+              <Button variant="outline" onClick={() => setPreview(null)}>
+                Back
+              </Button>
+              <Button
+                onClick={() => importMutation.mutate()}
+                disabled={importMutation.isPending || preview.created === 0}
+              >
+                {importMutation.isPending ? 'Importing…' : `Import ${preview.created}`}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => previewMutation.mutate()} disabled={!csv.trim() || previewMutation.isPending}>
+                {previewMutation.isPending ? 'Checking…' : 'Preview'}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -198,7 +365,7 @@ function EditUserDialog({ user, onSuccess }: { user: User; onSuccess: () => void
     >
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" title="Edit user">
-          <Pencil className="h-4 w-4 text-zinc-400" />
+          <Pencil className="h-4 w-4 text-muted-foreground" />
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -238,7 +405,7 @@ function EditUserDialog({ user, onSuccess }: { user: User; onSuccess: () => void
           </div>
         </div>
         {mutation.isError && (
-          <p className="text-sm text-red-400">{(mutation.error as Error).message}</p>
+          <p className="text-sm text-red-600">{(mutation.error as Error).message}</p>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -268,18 +435,18 @@ function UserRow({
 }) {
   return (
     <TableRow>
-      <TableCell className="font-medium text-zinc-100">{user.display_name}</TableCell>
-      <TableCell className="text-zinc-300">{user.uw_email ?? '—'}</TableCell>
-      <TableCell className="text-zinc-300">
-        {user.calendar_email ?? <span className="italic text-zinc-600">not set</span>}
+      <TableCell className="font-medium text-foreground">{user.display_name}</TableCell>
+      <TableCell className="text-foreground/80">{user.uw_email ?? '—'}</TableCell>
+      <TableCell className="text-foreground/80">
+        {user.calendar_email ?? <span className="italic text-muted-foreground">not set</span>}
       </TableCell>
-      <TableCell className="font-mono text-xs text-zinc-400">{user.discord_id ?? '—'}</TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">{user.discord_id ?? '—'}</TableCell>
       <TableCell>
         <Badge variant={user.role === 'admin' ? 'success' : 'secondary'} className="capitalize">
           {user.role}
         </Badge>
       </TableCell>
-      <TableCell className="text-zinc-400 text-xs">
+      <TableCell className="text-muted-foreground text-xs">
         {new Date(user.created_at).toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'short',
@@ -297,9 +464,9 @@ function UserRow({
             disabled={isActing}
           >
             {user.role === 'admin' ? (
-              <ShieldOff className="h-4 w-4 text-zinc-400" />
+              <ShieldOff className="h-4 w-4 text-muted-foreground" />
             ) : (
-              <ShieldCheck className="h-4 w-4 text-zinc-400" />
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
             )}
           </Button>
           <Button
@@ -309,7 +476,7 @@ function UserRow({
             onClick={() => onRemove(user.id)}
             disabled={isActing}
           >
-            <Trash2 className="h-4 w-4 text-red-400" />
+            <Trash2 className="h-4 w-4 text-red-600" />
           </Button>
         </div>
       </TableCell>
@@ -340,12 +507,15 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Users</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-bold text-foreground">Users</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Manage the allowlist of students and admins, and the calendar emails Dobby invites.
           </p>
         </div>
-        <AddUserDialog onSuccess={refresh} />
+        <div className="flex items-center gap-2">
+          <ImportUsersDialog onSuccess={refresh} />
+          <AddUserDialog onSuccess={refresh} />
+        </div>
       </div>
 
       <Card>
@@ -391,7 +561,7 @@ export default function UsersPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-10 text-center text-zinc-500">
+                    <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                       No users in the allowlist.
                     </TableCell>
                   </TableRow>

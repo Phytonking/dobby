@@ -37,14 +37,43 @@ class UserOut(BaseModel):
     created_at: Optional[datetime] = None
 
 
+DISCORD_ID = re.compile(r"^\d{15,21}$")
+
+
+def clean_discord_id(value: Optional[str]) -> Optional[str]:
+    """Discord IDs are 15-21 digit snowflakes; empty clears it."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if DISCORD_ID.match(value) is None:
+        raise ValueError("must be a numeric Discord user ID (Developer Mode → Copy User ID)")
+    return value
+
+
+def clean_name(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise ValueError("must not be empty")
+    if len(value) > 100:
+        raise ValueError("must be at most 100 characters")
+    return value
+
+
 class UserCreate(BaseModel):
-    uw_email: str
+    # Optional: teammates who sign in with Discord or a local account have no Google email.
+    uw_email: Optional[str] = None
     discord_id: Optional[str] = None
     display_name: str
     calendar_email: Optional[str] = None
     role: str = "student"
 
-    _clean = field_validator("calendar_email")(clean_email)
+    _clean = field_validator("calendar_email", "uw_email")(clean_email)
+    _clean_id = field_validator("discord_id")(clean_discord_id)
+    _clean_name = field_validator("display_name")(clean_name)
 
 
 class UserUpdate(BaseModel):
@@ -55,14 +84,22 @@ class UserUpdate(BaseModel):
     calendar_email: Optional[str] = None
 
     _clean = field_validator("calendar_email")(clean_email)
+    _clean_id = field_validator("discord_id")(clean_discord_id)
+    _clean_name = field_validator("display_name")(clean_name)
 
 
 class MeUpdate(BaseModel):
-    """What a signed-in user may change about themselves."""
+    """What a signed-in user may change about themselves.
 
+    Not their Discord ID or Google email: those decide who the bot and the login treat
+    them as, so only an admin changes them.
+    """
+
+    display_name: Optional[str] = None
     calendar_email: Optional[str] = None
 
     _clean = field_validator("calendar_email")(clean_email)
+    _clean_name = field_validator("display_name")(clean_name)
 
 
 class UserRoleUpdate(BaseModel):
@@ -92,6 +129,10 @@ class IntegrationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     provider: str
+    # connected | pending | needs_reconnect | disconnected — as Composio reports it.
+    status: str = "connected"
+    # False when Composio couldn't be asked and the status is only the dashboard's own record.
+    verified: bool = False
     connected_by: Optional[uuid.UUID] = None
     connected_at: Optional[datetime] = None
 
@@ -123,3 +164,59 @@ class PaginatedUsers(BaseModel):
 class PaginatedAudit(BaseModel):
     total: int
     items: list[AuditLogEntry]
+
+
+# ---------------------------------------------------------------------------
+# Bulk import
+# ---------------------------------------------------------------------------
+
+class UserImport(BaseModel):
+    """A CSV export (Google Contacts, a sign-up sheet, ...) pasted or uploaded by an admin."""
+
+    csv: str
+    # Preview only: validate and report what would happen without saving anything.
+    dry_run: bool = False
+
+
+class ImportRow(BaseModel):
+    line: int
+    display_name: Optional[str] = None
+    outcome: str  # created | would_create | skipped | invalid
+    reason: Optional[str] = None
+
+
+class ImportResult(BaseModel):
+    created: int
+    skipped: int
+    invalid: int
+    rows: list[ImportRow]
+
+
+# ---------------------------------------------------------------------------
+# System health
+# ---------------------------------------------------------------------------
+
+class HealthBucket(BaseModel):
+    hour: datetime
+    ok: int
+    failed: int
+
+
+class ServiceHealth(BaseModel):
+    key: str  # a provider key, or "dobby" for Dobby's own tools
+    connection: Optional[str] = None  # live Composio status; None for Dobby itself
+    calls: int
+    failures: int
+    last_success_at: Optional[datetime] = None
+    last_failure_at: Optional[datetime] = None
+
+
+class HealthReport(BaseModel):
+    window_hours: int
+    generated_at: datetime
+    composio_verified: bool
+    calls: int
+    failures: int
+    last_activity_at: Optional[datetime] = None
+    services: list[ServiceHealth]
+    hourly: list[HealthBucket]

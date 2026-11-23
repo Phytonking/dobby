@@ -27,7 +27,7 @@ const PROVIDERS: ProviderConfig[] = [
     key: 'google_calendar',
     label: 'Google Calendar',
     description: "The team calendar Dobby creates events on. Invitees don't need to connect anything.",
-    icon: <Calendar className="h-6 w-6 text-blue-400" />,
+    icon: <Calendar className="h-6 w-6 text-blue-600" />,
   },
   {
     key: 'google_drive',
@@ -45,20 +45,20 @@ const PROVIDERS: ProviderConfig[] = [
     key: 'notion',
     label: 'Notion',
     description: 'The workspace account Dobby reads and writes Notion pages with.',
-    icon: <BookOpen className="h-6 w-6 text-zinc-100" />,
+    icon: <BookOpen className="h-6 w-6 text-foreground" />,
   },
   {
     key: 'instagram',
     label: 'Instagram',
     description:
       "The group's Business/Creator account Dobby posts and stories to. Every post is confirmed in Discord first.",
-    icon: <Instagram className="h-6 w-6 text-pink-400" />,
+    icon: <Instagram className="h-6 w-6 text-pink-600" />,
   },
   {
     key: 'linkedin',
     label: 'LinkedIn',
     description: "The account Dobby publishes LinkedIn posts from, after a Confirm in Discord.",
-    icon: <Linkedin className="h-6 w-6 text-sky-400" />,
+    icon: <Linkedin className="h-6 w-6 text-sky-600" />,
   },
 ]
 
@@ -79,8 +79,8 @@ function readCallbackNotice(): Notice | null {
 function NoticeBanner({ notice }: { notice: Notice }) {
   const tone =
     notice.kind === 'success'
-      ? 'border-emerald-800 bg-emerald-950 text-emerald-300'
-      : 'border-red-800 bg-red-950 text-red-300'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : 'border-red-200 bg-red-50 text-red-800'
   return (
     <div role="status" className={`rounded-md border px-4 py-3 text-sm ${tone}`}>
       {notice.text}
@@ -99,7 +99,14 @@ function IntegrationCard({
   onDisconnect: (key: string) => void
   isDisconnecting: boolean
 }) {
-  const isConnected = !!integration
+  const status = integration?.status ?? 'disconnected'
+  const isConnected = status === 'connected'
+  const badge = {
+    connected: { variant: 'success' as const, text: 'Connected' },
+    pending: { variant: 'secondary' as const, text: 'Finishing sign-in' },
+    needs_reconnect: { variant: 'destructive' as const, text: 'Needs reconnect' },
+    disconnected: { variant: 'secondary' as const, text: 'Disconnected' },
+  }[status]
 
   return (
     <Card>
@@ -111,22 +118,26 @@ function IntegrationCard({
               <CardTitle className="text-base">{provider.label}</CardTitle>
             </div>
           </div>
-          <Badge variant={isConnected ? 'success' : 'secondary'}>
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </Badge>
+          <Badge variant={badge.variant}>{badge.text}</Badge>
         </div>
         <CardDescription className="mt-2">{provider.description}</CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
+        {status === 'needs_reconnect' && (
+          <p className="mb-3 text-xs text-red-600">
+            Composio has this account but it&apos;s expired or failed — Dobby can&apos;t use it. Reconnect it.
+          </p>
+        )}
         {isConnected ? (
           <div className="flex items-center justify-between">
-            <p className="text-xs text-zinc-400">
-              Since{' '}
-              {new Date(integration.connected_at).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
+            <p className="text-xs text-muted-foreground">
+              {integration?.connected_at
+                ? `Since ${new Date(integration.connected_at).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}`
+                : 'Connected'}
             </p>
             <Button
               variant="destructive"
@@ -139,7 +150,9 @@ function IntegrationCard({
           </div>
         ) : (
           <Button asChild size="sm" variant="secondary">
-            <a href={api.integrations.connectUrl(provider.key)}>Connect</a>
+            <a href={api.integrations.connectUrl(provider.key)}>
+              {status === 'disconnected' ? 'Connect' : 'Reconnect'}
+            </a>
           </Button>
         )}
       </CardContent>
@@ -192,18 +205,26 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Dobby&apos;s service accounts</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-bold text-foreground">Dobby&apos;s service accounts</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Connect the accounts Dobby acts through. One shared connection per service — nobody
           links a personal account. Admins only.
         </p>
       </div>
 
       {notice && <NoticeBanner notice={notice} />}
+      {integrations && integrations.length > 0 && !integrations[0].verified && (
+        <NoticeBanner
+          notice={{
+            kind: 'error',
+            text: "Couldn't check with Composio (unreachable or not configured), so this shows the dashboard's last known state. It may be out of date.",
+          }}
+        />
+      )}
 
       {me && !isAdmin ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-zinc-400">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
             Only admins can manage Dobby&apos;s service accounts.
           </CardContent>
         </Card>

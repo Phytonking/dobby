@@ -32,7 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen bg-background">
       <Nav user={user} />
       <div className="pl-60">
         <main className="min-h-screen p-8">{children}</main>

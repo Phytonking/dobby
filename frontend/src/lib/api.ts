@@ -1,16 +1,36 @@
-import type { User, Integration, AuditEntry, Paginated } from './types'
+import type { User, Integration, AuditEntry, Paginated, ImportResult, HealthReport } from './types'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
+interface ValidationIssue {
+  loc?: (string | number)[]
+  msg?: string
+}
+
+// FastAPI sends a string for handled errors and a list of issues for validation (422) errors.
+export function errorMessage(detail: unknown, status: number): string {
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    return (detail as ValidationIssue[])
+      .map((issue) => {
+        const field = issue.loc?.filter((part) => part !== 'body').join('.')
+        const msg = (issue.msg ?? 'is invalid').replace(/^Value error, /, '')
+        return field ? `${field.replace(/_/g, ' ')}: ${msg}` : msg
+      })
+      .join('; ')
+  }
+  return `Request failed: ${status}`
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
+    ...options,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as { detail?: string }).detail ?? `Request failed: ${res.status}`)
+    throw new Error(errorMessage((err as { detail?: unknown }).detail, res.status))
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
@@ -28,7 +48,7 @@ export const api = {
     method: 'POST', body: JSON.stringify({ username, password }),
   }),
   me: () => request<User>('/me'),
-  updateMe: (data: { calendar_email: string | null }) =>
+  updateMe: (data: { calendar_email?: string | null; display_name?: string }) =>
     request<User>('/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
@@ -43,7 +63,7 @@ export const api = {
     users: {
       list: () => request<Paginated<User>>('/admin/users?limit=200').then((page) => page.items),
       create: (data: {
-        uw_email: string
+        uw_email?: string
         discord_id?: string
         display_name: string
         calendar_email?: string
@@ -51,10 +71,16 @@ export const api = {
       }) => request<User>('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
       update: (id: string, data: UserEdit) =>
         request<User>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+      import: (csv: string, dryRun: boolean) =>
+        request<ImportResult>('/admin/users/import', {
+          method: 'POST',
+          body: JSON.stringify({ csv, dry_run: dryRun }),
+        }),
       remove: (id: string) => request<void>(`/admin/users/${id}`, { method: 'DELETE' }),
       setRole: (id: string, role: string) =>
         request<User>(`/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
     },
+    health: () => request<HealthReport>('/admin/health'),
     audit: (params?: { limit?: number; offset?: number; tool?: string; status?: string }) => {
       const q = new URLSearchParams(
         Object.fromEntries(
