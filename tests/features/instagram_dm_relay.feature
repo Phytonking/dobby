@@ -92,8 +92,7 @@ Feature: Relay Instagram DMs into Discord threads
   Scenario: The relay is off when no channel is configured
     Given INSTAGRAM_DM_CHANNEL_ID is unset
     Then Dobby does not run the DM relay
-    When teammate 1 runs "/dm reply" with "Hi" in a thread of channel 900
-    Then teammate 1 is told to use it inside an Instagram DM thread
+    And the /dm command is not offered
 
   Scenario: A Composio failure does not crash the poller
     Given Instagram fails to answer

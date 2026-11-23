@@ -73,7 +73,9 @@ def register(bot):
             await fail(interaction, "instagram_story", exc)
 
     bot.tree.add_command(group)
-    register_dm(bot, fail)
+    # /dm only exists where the relay is switched on, so other servers don't see a dead command.
+    if getattr(bot.config, "instagram_dm_channel", 0):
+        register_dm(bot, fail)
 
 
 async def relay_gate(bot, interaction) -> bool:

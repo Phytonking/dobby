@@ -24,7 +24,10 @@ def preview_text(pending: list[PendingAction]) -> str:
 
 
 async def run_after_success(actions: list[PendingAction], channel) -> None:
-    """Follow-ups for actions that ran, once their outcome is visible; a failing hook is only logged."""
+    """Follow-ups for actions that ran, once their outcome is visible; a failing hook is only logged.
+
+    `channel` may be None (e.g. a partial interaction); hooks must cope with that.
+    """
     for action in actions:
         if action.after_success is None:
             continue
@@ -102,7 +105,7 @@ class ConfirmView(discord.ui.View):
                 succeeded.append(action)
         await interaction.edit_original_response(content="\n".join(lines)[:2000], view=self)
         self.stop()
-        await run_after_success(succeeded, interaction.channel)
+        await run_after_success(succeeded, getattr(interaction, "channel", None))
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button):

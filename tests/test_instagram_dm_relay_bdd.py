@@ -518,6 +518,11 @@ def relay_not_running(world):
     assert world.bot.dm_relay is None
 
 
+@then("the /dm command is not offered")
+def dm_not_offered(world):
+    assert "dm" not in {c.name for c in world.bot.tree.get_commands()}
+
+
 @then(parsers.parse("teammate {user:d} is told to use it inside an Instagram DM thread"))
 def told_wrong_place(world, user):
     reply = world.interactions[user].response.send_message.await_args
