@@ -17,10 +17,15 @@ from starlette.responses import Response
 pytestmark = pytest.mark.asyncio
 
 
+async def statuses(admin):
+    """Each provider's connection status as the service-accounts page shows it."""
+    return {row["provider"]: row["status"] for row in (await admin.get("/integrations")).json()}
+
+
 async def test_04_dashboard_without_connected_accounts(clients):
     admin, member, anonymous = clients
     assert (await anonymous.get("/health")).json() == {"ok": True}
-    assert (await admin.get("/integrations")).json() == []
+    assert set((await statuses(admin)).values()) == {"disconnected"}
     assert (await admin.get("/admin/users")).json()["total"] == 2
     result = await member.patch("/me", json={"calendar_email": " Member@Example.org "})
     assert result.status_code == 200, result.text
@@ -86,7 +91,14 @@ async def test_13_dashboard_authorization(clients, db):
 
 async def test_15_dashboard_connection_lifecycle(clients, monkeypatch):
     admin = clients[0]
-    account = SimpleNamespace(id="ci-account", status="ACTIVE")
+    # Composio is the source of truth for status: the account starts mid-sign-in.
+    account = SimpleNamespace(
+        id="ci-account",
+        status="INITIATED",
+        is_disabled=False,
+        toolkit=SimpleNamespace(slug="notion"),
+        created_at="2026-01-01T00:00:00Z",
+    )
     provider = Mock()
     provider.connected_accounts.list.return_value = SimpleNamespace(items=[account])
     provider.connected_accounts.delete.side_effect = lambda **kw: setattr(account, "status", "INACTIVE")
@@ -101,17 +113,21 @@ async def test_15_dashboard_connection_lifecycle(clients, monkeypatch):
     incomplete = await admin.get("/integrations/notion/callback?status=success")
     assert incomplete.status_code == 307
     assert incomplete.headers["location"].endswith("/dashboard/integrations?error=notion")
-    assert (await admin.get("/integrations")).json() == []
+    assert (await statuses(admin))["notion"] == "pending"
+    # A callback for an account that isn't active yet is refused.
     callback = "/integrations/notion/callback?status=success&connected_account_id=ci-account"
+    early = await admin.get(callback)
+    assert early.headers["location"].endswith("/dashboard/integrations?error=notion")
+    account.status = "ACTIVE"
     connected = await admin.get(callback)
     assert connected.headers["location"].endswith("/dashboard/integrations?connected=notion")
-    assert (await admin.get("/integrations")).json()[0]["provider"] == "notion"
+    assert (await statuses(admin))["notion"] == "connected"
     assert (await admin.delete("/integrations/notion")).status_code == 204
     provider.connected_accounts.delete.assert_called_once_with(nanoid="ci-account")
-    assert (await admin.get("/integrations")).json() == []
+    assert (await statuses(admin))["notion"] == "disconnected"
     stale = await admin.get(callback)
     assert stale.headers["location"].endswith("/dashboard/integrations?error=notion")
-    assert (await admin.get("/integrations")).json() == []
+    assert (await statuses(admin))["notion"] == "disconnected"
 
 
 async def test_18_dashboard_concurrent_users(clients):
@@ -216,7 +232,7 @@ async def test_26_dashboard_audit_filter_and_pagination(clients, db):
 
 async def test_27_dashboard_duplicate_users_and_crud(clients):
     admin = clients[0]
-    body = {"uw_email": "unique@example.org", "discord_id": "123", "display_name": "Unique"}
+    body = {"uw_email": "unique@example.org", "discord_id": "123456789012345678", "display_name": "Unique"}
     response = await admin.post("/admin/users", json=body)
     assert response.status_code == 201, response.text
     user_id = response.json()["id"]

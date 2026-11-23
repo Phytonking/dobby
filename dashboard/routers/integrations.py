@@ -74,7 +74,7 @@ def _connection_is_active(toolkit: str, account_id: str) -> bool:
 
 
 # Best first: when one toolkit has several accounts, the healthiest one decides its status.
-_STATUS_RANK = {"ACTIVE": 0, "INITIATED": 1, "INITIALIZING": 1, "EXPIRED": 2, "FAILED": 2, "INACTIVE": 2}
+_STATUS_RANK = {"ACTIVE": 0, "INITIATED": 1, "INITIALIZING": 1, "EXPIRED": 2, "FAILED": 2}
 _LIVE_STATUS = {"ACTIVE": "connected", "INITIATED": "pending", "INITIALIZING": "pending"}
 
 
@@ -95,7 +95,8 @@ def _live_connections() -> dict[str, dict]:
         for account in page.items:
             toolkit = getattr(getattr(account, "toolkit", None), "slug", None)
             state = str(getattr(account, "status", "") or "").upper()
-            if not toolkit or state == "REVOKED" or getattr(account, "is_disabled", False):
+            # REVOKED/INACTIVE: deliberately switched off or removed, i.e. not connected.
+            if not toolkit or state in ("REVOKED", "INACTIVE") or getattr(account, "is_disabled", False):
                 continue
             best = found.get(toolkit)
             if best is None or _STATUS_RANK.get(state, 9) < _STATUS_RANK.get(best["raw"], 9):
@@ -128,23 +129,15 @@ def _disconnect_accounts(toolkit: str) -> None:
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=list[IntegrationOut])
-async def list_integrations(
-    db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
+async def service_statuses(db: AsyncSession) -> list[IntegrationOut]:
     """Every supported provider and whether Dobby's service entity is really connected to it.
 
     Status comes from Composio, not the local table, so connections made outside the dashboard
     (or whose callback was lost) still show as connected and revoked ones don't. When Composio
     can't be reached the local records are returned with ``verified`` false.
     """
-    try:
-        result = await db.execute(select(Integration))
-        records = {i.provider: i for i in result.scalars().all()}
-    except Exception:
-        logger.exception("Failed to list integrations")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
+    result = await db.execute(select(Integration))
+    records = {i.provider: i for i in result.scalars().all()}
 
     live = None
     if COMPOSIO_API_KEY:
@@ -174,6 +167,19 @@ async def list_integrations(
             connected_at=since if state != "disconnected" else None,
         ))
     return out
+
+
+@router.get("", response_model=list[IntegrationOut])
+async def list_integrations(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """List every supported provider with its live connection status."""
+    try:
+        return await service_statuses(db)
+    except Exception:
+        logger.exception("Failed to list integrations")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
 
 
 @router.get("/{provider}/connect")
