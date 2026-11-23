@@ -32,7 +32,8 @@ bot/
     ├── discord/       the transport: client.py (Bot), context.py, commands.py (/email, /help), confirm.py
     ├── google_calendar/   __init__ (ACTIONS, prompt), commands.py (/schedule, /events), tools.py
     ├── notion/            __init__ (ACTIONS, prompt), commands.py (/notion search|note)
-    ├── instagram/         __init__, commands.py (/instagram posts|post|story), publish.py
+    ├── instagram/         __init__, commands.py (/instagram posts|post|story, /dm reply|close), publish.py,
+    │                      dms.py (DM actions), relay.py (DM → thread poller, reply tool, store)
     └── linkedin/          __init__, commands.py (/linkedin post), publish.py
 ```
 
@@ -46,7 +47,7 @@ Tests mirror this under `tests/` and `tests/integrations/<service>/`.
 | --- | --- |
 | `Integration` | `key`, `label`, Composio `app`, curated `actions` the model may call directly, `local_tools`, a `prompt` paragraph, `register_commands(bot)`, `help_lines` |
 | `LocalTool` | An `AIModels.FunctionDeclaration` plus an async handler that runs in-process (`(RunContext, params) -> dict`) |
-| `PendingAction` | Something that must not happen until the requester confirms: `integration`, `label`, `preview`, an async `execute()`, and an optional `release(outcome)` called with `cancelled` or `expired` when it will never run |
+| `PendingAction` | Something that must not happen until the requester confirms: `integration`, `label`, `preview`, an async `execute()`, an optional `release(outcome)` called with `cancelled` or `expired` when it will never run, and an optional `after_success(channel)` run once a successful outcome has been reported (the DM relay uses it to close the thread) |
 | `RunContext` | Per-run state a handler may use: DB session, guild/channel/user ids, the Composio toolset, `Config`, `known_discord_ids` (IDs from @mentions and lookups, the only ones a write tool accepts), and `pending` — `ctx.queue(action)` parks a `PendingAction` and tells the model it is awaiting confirmation |
 
 `build_registry()` walks `INTEGRATIONS`, asks Composio for the schema of every curated action
@@ -57,7 +58,7 @@ unknown names with a warning), adds the local tools, and joins the prompts.
 | --- | --- | --- | --- | --- |
 | `google_calendar` | find event, find free slots | `lookup_calendar_email`; schema-preserving create / patch / delete proposal handlers | `/schedule`, `/events` | **yes**, 🟢 / 🔴 |
 | `notion` | search, fetch, create page, add content | — | `/notion search`, `/notion note` | no |
-| `instagram` | none | `list_instagram_posts`, `draft_instagram_post`, `draft_instagram_story` | `/instagram posts`, `post`, `story` | **yes** |
+| `instagram` | none | `list_instagram_posts`, `draft_instagram_post`, `draft_instagram_story`, `draft_instagram_dm_reply` | `/instagram posts`, `post`, `story`; `/dm reply`, `/dm close` | **yes** |
 | `linkedin` | none | `draft_linkedin_post` | `/linkedin post` | **yes** |
 
 Publishing integrations expose no direct Composio actions: the model can only *draft*, and the Graph
@@ -167,7 +168,8 @@ Before an agent request, `discord/emails.py` can recover explicit self-email dec
 prompt replies from the same `CONTEXT_MESSAGE_LIMIT` human-message window in the current channel.
 It respects `ALLOWED_CHANNEL_IDS` and `MENTION_CHANNEL_IDS`, and never stores chat text. Message
 timestamps prevent older context from overwriting a newer address or undoing `/email remove`.
-Apply migrations **004** and **005** before running this bot version; they add `calendar_invites`,
+Apply migrations **004**, **005** and **006** before running this bot version (006 adds
+`instagram_dm_threads` for the optional DM relay); they add `calendar_invites`,
 `users.calendar_email_updated_at`, and the prompt tracking columns `proposed_at` and `attempts`. Pending
 invitations survive restarts; unconfirmed previews and open approval prompts do not (a lost prompt is
 reopened and asked again).
@@ -178,6 +180,7 @@ All durable state lives in Postgres (Alembic migrations in `migrations/versions/
 | --- | --- |
 | `users` | Read by `discord_id` (mentions, `/email show`) and by `display_name` (`lookup_calendar_email`); `/email set` and `remove` update `calendar_email` for the caller's own row |
 | `calendar_invites` | Confirmed event IDs, waiting people (exact Discord ID), original requester/channel, status (`pending`/`proposed`/`completed`/`declined`/`expired`), prompt time and attempt count; no message content |
+| `instagram_dm_threads` | One row per Instagram conversation the relay has seen: conversation ID, the other person's Instagram-scoped ID (reply recipient), Discord channel/thread IDs, `open`/`closed`, newest message ID and time seen. No message text or usernames |
 | `agent_actions` | Written: one row per tool call or publish, metadata only (`discord_id`, resolved `user_id`, tool name, `ok`/`error`, duration). Arguments and results are never stored |
 
 `sessions` and `integrations` belong to the dashboard. Configuration is environment-only. There is
@@ -200,7 +203,9 @@ Invitees only need a `calendar_email` on their `users` row; nobody links a perso
   Legacy `GEMINI_*` settings remain supported. See [model setup](../README.md#step-3-configure-an-ai-model).
 - **Optional:** `TEAM_TIMEZONE`, `COMPOSIO_ENTITY_ID` (default `dobby`),
   `CONTEXT_MESSAGE_LIMIT` (0–500, default 50), `INSTAGRAM_USER_ID` (required to use Instagram;
-  commands explain if missing), `NOTION_PARENT_PAGE_ID` (where `/notion note` creates pages)
+  commands explain if missing), `NOTION_PARENT_PAGE_ID` (where `/notion note` creates pages),
+  `INSTAGRAM_DM_CHANNEL_ID` (turns on the DM relay; requires `INSTAGRAM_USER_ID`),
+  `INSTAGRAM_DM_POLL_SECONDS` (15–3600, default 60)
 
 Invalid config raises `ConfigError`, and the process exits with code 2.
 
@@ -226,6 +231,24 @@ Business/Creator account (`INSTAGRAM_USER_ID`) connected through a Meta app with
 image/video as a story; the API cannot attach the interactive share sticker, and carousel posts
 have no single media URL to reuse. **LinkedIn** needs the `w_member_social` scope on the Composio
 connection; the author URN is resolved from the connected account at publish time.
+
+**Instagram DM relay.** Off unless `INSTAGRAM_DM_CHANNEL_ID` is set. `relay.DmRelay` starts from
+`Bot.setup_hook` and every `INSTAGRAM_DM_POLL_SECONDS` calls `INSTAGRAM_LIST_ALL_CONVERSATIONS`,
+skips conversations whose `updated_time` is not past the stored cursor, and reads the rest with
+`INSTAGRAM_LIST_ALL_MESSAGES`. New messages are those after the cursor's message ID (or, for a
+conversation never seen, after the bot started, so the existing inbox is not replayed). Messages
+whose sender is `INSTAGRAM_USER_ID`, or whose ID Dobby just sent, are ours and are skipped. Inbound
+ones go to the conversation's open thread, or to a new thread under a notice in the channel. A
+Composio failure is logged (`instagram_dm_list_failed`) and the next poll retries; a Discord error
+rolls back that conversation's cursor so it is retried. `/dm reply` and the model tool
+`draft_instagram_dm_reply` only work in an open relay thread. They build a `PendingAction` whose
+preview is exactly the text `INSTAGRAM_SEND_TEXT_MESSAGE` sends, and whose `after_success` marks
+the row closed and archives the thread. Relay threads are gated by their parent channel: allowlists
+and `MENTION_CHANNEL_IDS` are checked against `INSTAGRAM_DM_CHANNEL_ID`, and mention context keeps
+Dobby's own relayed lines so the model can see the DM. The Meta app needs `instagram_manage_messages`.
+Instagram only allows replies within 24 hours of the person's last message. LinkedIn has no
+messaging API, so there is no LinkedIn equivalent. Audit rows: `instagram_dm.relay`, `.publish`,
+`.close`.
 
 ## Voice
 
